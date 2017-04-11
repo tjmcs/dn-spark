@@ -1,0 +1,15 @@
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+- block:
+  - name: Create spark service file
+    template:
+      src: "spark-{{cluster_role | default('worker')}}.service.j2"
+      dest: "/etc/systemd/system/spark-{{cluster_role | default('worker')}}.service"
+      mode: 0644
+  - name: restart systemctl daemon
+    command: systemctl daemon-reload
+  - name: Enable spark service on boot
+    service:
+      name: "spark-{{cluster_role | default('worker')}}"
+      enabled: yes
+  become: true

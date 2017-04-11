@@ -1,0 +1,54 @@
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+# set a fact containing the appropriate (private) IP addresses of the spark_master_nodes
+# (if a list of spark_master_nodes was passed in)
+- set_fact:
+    spark_data_ips: "{{(spark_master_nodes | default([])) | map('extract', hostvars, [('ansible_' + data_iface), 'ipv4', 'address']) | list}}"
+  when: spark_master_nodes != []
+- set_fact:
+    spark_data_ips: "{{spark_data_ips | default([data_addr])}}"
+# download the Spark distribution and unpack it into the proper directory
+- block:
+  # download the Spark distribution from the input URL
+  - name: Download spark distribution to /tmp
+    get_url:
+      url: "{{spark_url}}"
+      dest: /tmp
+      mode: 0644
+      validate_certs: no
+    environment: "{{environment_vars}}"
+  - set_fact:
+      spark_filename: "{{spark_url | basename}}"
+  # create the directory Spark will be unpacked into
+  - name: Create Spark home directory {{spark_dir}}
+    file:
+      path: "{{spark_dir}}"
+      state: directory
+      mode: 0755
+      owner: "{{spark_user}}"
+      group: "{{spark_group}}"
+  # unpack the distribution file
+  - name: Unpack spark distribution into {{spark_dir}}
+    unarchive:
+      copy: no
+      src: "/tmp/{{spark_filename}}"
+      dest: "{{spark_dir}}"
+      extra_opts: [ --strip-components=1 ]
+      owner: "{{spark_user}}"
+      group: "{{spark_group}}"
+  # create the data directory
+  - name: Create Spark data directory {{spark_data_dir}}/spark
+    file:
+      path: "{{spark_data_dir}}/spark"
+      state: directory
+      mode: 0755
+      owner: "{{spark_user}}"
+      group: "{{spark_group}}"
+  - name: Add spark-default.conf file to distribution
+    template:
+      src: "spark-defaults.conf.j2"
+      dest: "{{spark_dir}}/conf/spark-defaults.conf"
+      mode: 0644
+      owner: "{{spark_user}}"
+      group: "{{spark_group}}"
+  become: true

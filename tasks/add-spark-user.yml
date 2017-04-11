@@ -1,0 +1,14 @@
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+- name: Create spark user group
+  become: true
+  group:
+    name: "{{spark_group}}"
+    system: yes
+- name: Create spark user
+  become: true
+  user:
+    name: "{{spark_user}}"
+    group: "{{spark_group}}"
+    createhome: no
+    system: yes

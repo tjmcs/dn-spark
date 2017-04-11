@@ -1,0 +1,126 @@
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+# Build our spark and spark_master host groups
+- name: Create spark and spark_master host groups
+  hosts: "{{host_inventory}}"
+  gather_facts: no
+  tasks:
+    # load the 'local variables file', if one was defined, to get any variables
+    # we might need from that file when constructing our host groups
+    - name: Load local variables file
+      include_vars:
+        file: "{{local_vars_file}}"
+      when: not (local_vars_file is undefined or local_vars_file is none or local_vars_file | trim == '')
+    # then, build our host groups
+    - include_role:
+        name: build-app-host-groups
+      vars:
+        host_group_list:
+          - { name: spark, role: master, invert_match: true }
+          - { name: spark, role: master }
+      when: cloud == 'aws' or cloud == 'osp'
+    - include_role:
+        name: build-app-host-groups
+      vars:
+        host_group_list:
+          - { name: spark, node_list: "{{host_inventory}}" }
+          - { name: spark_master, node_list: "{{spark_master_nodes | default([])}}" }
+      when: cloud == "vagrant"
+    - set_fact:
+        spark_nodes: "{{spark_nodes | difference(groups['spark_skip'] | default([]))}}"
+      when: (groups['spark_skip'] | default([])) != []
+    - set_fact:
+        master_nodes_only: true
+        spark_nodes: "{{spark_master_nodes}}"
+      when: (groups['spark'] | default([])) == []
+
+# Build a spark group from the spark_master host group if no non-master nodes were found
+- name: Build spark host group if no non-master nodes were found
+  hosts: spark_master
+  gather_facts: no
+  tasks:
+      - add_host:
+          name: "{{item}}"
+          groups: spark
+        with_items: "{{groups['spark_master']}}"
+        when: master_nodes_only is defined and master_nodes_only
+
+# Gather facts for the spark master nodes if a set of non-master nodes were found
+- name: Gather facts for spark master nodes if there are non-master nodes
+  hosts: spark_master
+  gather_facts: no
+  tasks:
+    - setup:
+      when: master_nodes_only is undefined or not (master_nodes_only)
+    - name: set cluster_role for spark_master nodes
+      set_fact:
+        cluster_role: master
+
+# Then, deploy Spark to the nodes in the spark host group that was passed in (if there
+# is more than one node passed in, those nodes will be configured as a single Spark cluster)
+- name: Install/configure servers (spark)
+  hosts: spark
+  gather_facts: no
+  vars_files:
+    - vars/spark.yml
+  vars:
+    - combined_package_list: "{{ (default_packages|default([])) | union(spark_package_list) | union((install_packages_by_tag|default({})).spark|default([])) }}"
+  pre_tasks:
+    - name: set cluster_role for spark_master nodes
+      set_fact:
+        cluster_role: master
+      when: master_nodes_only is defined and master_nodes_only
+    # first, load the local variables file (if one was defined); this will initialize
+    # the variables used in our playbook (and override any values in the 'vars/spark.yml'
+    # file with redefined values from the 'local_vars_file', if any)
+    - name: Load local variables file (if defined)
+      include_vars:
+        file: "{{local_vars_file}}"
+      when: not (local_vars_file is undefined or local_vars_file is none or local_vars_file | trim == '')
+    # then, restart the network (unless the skip_network_restart was set)
+    # and gather some facts about our Spark node(s)
+    - name: Ensure the network interfaces are up on our Spark node(s)
+      service:
+        name: network
+        state: restarted
+      become: true
+      when: not (skip_network_restart is defined or skip_network_restart)
+    - name: Gather facts from the Spark node(s)
+      setup:
+    # next, we obtain the interface names for our data_iface
+    # and api_iface (provided an interface description was provided for each)
+    - include_role:
+        name: get-iface-names
+      vars:
+        iface_descriptions: "{{iface_description_array}}"
+      when: not (iface_description_array is undefined or iface_description_array == [])
+    # if we're provisioning a RHEL machine, then we need to ensure that
+    # it's subscribed before we can install anything (if it hasn't been
+    # registered already, of course, if that's the case then we can skip
+    # this step)
+    - block:
+      - redhat_subscription:
+          state: present
+          username: "{{rhel_username}}"
+          password: "{{rhel_password}}"
+          consumer_id: "{{rhel_consumer_id}}"
+        become: true
+        when: rhel_username is defined and rhel_password is defined and rhel_consumer_id is defined
+      when: ansible_distribution == 'RedHat'
+  # Now that we have all of the facts we need, we can run the roles that are used to
+  # deploy and configure Spark
+  roles:
+    - role: get-iface-addr
+      iface_name: "{{data_iface}}"
+      as_fact: "data_addr"
+    - role: get-iface-addr
+      iface_name: "{{api_iface}}"
+      as_fact: "api_addr"
+    - role: setup-web-proxy
+    - role: add-local-repository
+      yum_repository: "{{yum_repo_url}}"
+      when: yum_repo_url is defined
+    - role: install-packages
+      package_list: "{{combined_package_list}}"
+    - role: get-java-home
+    - role: dn-spark

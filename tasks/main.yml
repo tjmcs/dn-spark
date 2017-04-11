@@ -1,0 +1,6 @@
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+- include: add-spark-user.yml static=no
+- include: install-apache-spark.yml static=no
+- include: create-spark-service.yml static=no
+- include: start-spark-service.yml static=no

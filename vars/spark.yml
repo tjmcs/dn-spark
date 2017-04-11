@@ -1,0 +1,36 @@
+---
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+
+# Variables that are necessary for all deployments of
+# Apache Spark
+
+# Defaults that should only be overridden if required
+
+application: spark
+spark_data_dir: /var/lib
+spark_package_list: ["java-1.8.0-openjdk", "java-1.8.0-openjdk-devel"]
+
+spark_group: spark
+spark_user: spark
+
+# define the parameters needed to download and unpack the Apache Spark
+# distribution
+spark_version: "2.1.0"
+# spark_url: "https://www-us.apache.org/dist/spark/spark-{{spark_version}}/spark-{{spark_version}}-bin-without-hadoop.tgz"
+spark_url: "https://www-us.apache.org/dist/spark/spark-{{spark_version}}/spark-{{spark_version}}-bin-hadoop2.7.tgz"
+spark_dir: /opt/apache-spark
+
+# the names of the interfaces to use for the Spark servers; the "data"
+# interface is the private interface that is used to communicate with other
+# members of the cluster (and Zookeeper), while the "api" interface is the
+# interface that the database listens on for connections from clients
+api_iface: "eth0"
+data_iface: "eth0"
+
+spark_master_port: 7077
+spark_master_webui_port: 8080
+spark_worker_port: 7178
+spark_worker_webui_port: 8181
+
+# path used to access private keys (defaults to the current working directory)
+private_key_path: "."

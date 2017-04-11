@@ -1,0 +1,7 @@
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+- name: Start spark service
+  become: true
+  service:
+    name: "spark-{{cluster_role | default('worker')}}"
+    state: restarted
