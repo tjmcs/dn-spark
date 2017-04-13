@@ -8,7 +8,7 @@ Type=forking
 User=spark
 Group=spark
 Environment=JAVA_HOME={{ java_home }}
-Environment=SPARK_MASTER_HOST={{ spark_data_ips.0 }}
+Environment=SPARK_MASTER_HOST={{ data_addr }}
 Environment=SPARK_LOCAL_IP={{ data_addr }}
 WorkingDirectory={{ spark_data_dir }}/spark
 ExecStart={{ spark_dir }}/sbin/start-master.sh --port {{ spark_master_port }} --webui-port {{ spark_master_webui_port }} --properties-file {{ spark_dir }}/conf/spark-defaults.conf
