@@ -18,6 +18,7 @@
         host_group_list:
           - { name: spark, role: master, invert_match: true }
           - { name: spark, role: master }
+          - name: zookeeper
       when: cloud == 'aws' or cloud == 'osp'
     - include_role:
         name: build-app-host-groups
@@ -25,6 +26,7 @@
         host_group_list:
           - { name: spark, node_list: "{{host_inventory}}" }
           - { name: spark_master, node_list: "{{spark_master_nodes | default([])}}" }
+          - { name: zookeeper, inventory_file: "{{zookeeper_inventory_file}}" }
       when: cloud == "vagrant"
     - set_fact:
         spark_nodes: "{{spark_nodes | difference(groups['spark_skip'] | default([]))}}"
@@ -33,6 +35,14 @@
         master_nodes_only: true
         spark_nodes: "{{spark_master_nodes}}"
       when: (groups['spark'] | default([])) == []
+
+# Collect some Zookeeper related facts and determine the "private" IP addresses of
+# the nodes in the Zookeeper ensemble (from their "public" IP addresses and the `data_iface`
+# variable that was passed in as part of this playbook run) if a list of "public"  Zookeeper
+# IP addresses was passed in.
+- name: Gather facts from Zookeeper host group (if defined)
+  hosts: zookeeper
+  tasks: []
 
 # Build a spark group from the spark_master host group if no non-master nodes were found
 - name: Build spark host group if no non-master nodes were found
@@ -94,6 +104,10 @@
       vars:
         iface_descriptions: "{{iface_description_array}}"
       when: not (iface_description_array is undefined or iface_description_array == [])
+    # and now that we know we have our data_iface identified, we can construct
+    # the list of zk_nodes (the data_iface IP addresses of our zookeeper_nodes)
+    - set_fact:
+        zk_nodes: "{{(zookeeper_nodes | default([])) | map('extract', hostvars, [('ansible_' + data_iface), 'ipv4', 'address']) | list}}"
     # if we're provisioning a RHEL machine, then we need to ensure that
     # it's subscribed before we can install anything (if it hasn't been
     # registered already, of course, if that's the case then we can skip

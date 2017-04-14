@@ -3,4 +3,6 @@
 - include: add-spark-user.yml static=no
 - include: install-apache-spark.yml static=no
 - include: create-spark-service.yml static=no
+- include: configure-ha-cluster.yml static=no
+  when: (zk_nodes | default([])) != [] and (spark_master_nodes | length) > 1
 - include: start-spark-service.yml static=no

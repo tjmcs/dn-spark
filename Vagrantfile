@@ -21,6 +21,21 @@ class OptionParser
   end
 end
 
+# a function that is used to parse Ansible (static) inventory files and
+# return a list of the node addresses contained in the file
+def addr_list_from_inventory_file(inventory_file)
+  first_field_list = []
+  File.open(inventory_file, 'r') do |f|
+    f.each_line do |line|
+      # grab the first field from each line
+      first_field_list << line.gsub(/\s+/, ' ').strip.split(" ")[0]
+    end
+  end
+  # return the entries that look like IP addresses (skipping the rest)
+  # and only return the unique values in the resulting list
+  first_field_list.select { |addr| (addr =~ Resolv::IPv4::Regex) }.uniq
+end
+
 # and define a function that we'll use during the provisioning process
 # to reduce code duplication (since we provision clusters in two passes
 # that are essentially identical)
@@ -45,6 +60,7 @@ def setup_ansible_config(ansible, provisioned_nodes, options)
     cloud: "vagrant",
     data_iface: "eth1",
     api_iface: "eth2",
+    zookeeper_inventory_file: options[:inventory_file]
   }
 
   # if defined, set the 'extra_vars[:spark_url]' value to the value that was passed in on
@@ -84,7 +100,9 @@ def setup_ansible_config(ansible, provisioned_nodes, options)
   end
 end
 
+# initialize a few values
 options = {}
+VALID_ZK_ENSEMBLE_SIZES = [3, 5, 7]
 # vagrant commands that include these commands can be run without specifying
 # any IP addresses
 no_ip_commands = ['version', 'global-status', '--help', '-h']
@@ -93,6 +111,7 @@ single_ip_commands = ['status', 'ssh']
 # vagrant command arguments that indicate we are provisioning a cluster (if multiple
 # nodes are supplied via the `--spark-list` flag)
 provisioning_command_args = ['up', 'provision']
+no_zk_required_command_args = ['destroy']
 not_provisioning_flag = ['--no-provision']
 
 optparse = OptionParser.new do |opts|
@@ -104,6 +123,13 @@ optparse = OptionParser.new do |opts|
     # while parsing, trim an '=' prefix character off the front of the string if it exists
     # (would occur if the value was passed using an option flag like '-s=192.168.1.1')
     options[:spark_list] = spark_list.gsub(/^=/,'')
+  end
+
+  options[:inventory_file] = nil
+  opts.on( '-i', '--inventory-file FILE', 'Zookeeper (Ansible) inventory file' ) do |inventory_file|
+    # while parsing, trim an '=' prefix character off the front of the string if it exists
+    # (would occur if the value was passed using an option flag like '-i=/tmp/zookeeper_inventory')
+    options[:inventory_file] = inventory_file.gsub(/^=/,'')
   end
 
   options[:spark_dir] = nil
@@ -135,7 +161,7 @@ optparse = OptionParser.new do |opts|
   end
 
   options[:spark_master_nodes] = nil
-  opts.on( '-m', '--master-nodes NODES', 'Comma separated string containing the master nodes in the cluster' ) do |spark_master_nodes|
+  opts.on( '-m', '--master-nodes A1,A2[,...]', 'Spark master nodes address list' ) do |spark_master_nodes|
     # while parsing, trim an '=' prefix character off the front of the string if it exists
     # (would occur if the value was passed using an option flag like '-m=127.0.01')
     options[:spark_master_nodes] = spark_master_nodes.gsub(/^=/,'')
@@ -185,6 +211,8 @@ provisioning_command = !((ARGV & provisioning_command_args).empty?) && (ARGV & n
 # and to see if multiple IP addresses are supported (or not) for the
 # command being invoked
 single_ip_command = !((ARGV & single_ip_commands).empty?)
+# and to see if a zookeeper inventory must also be provided
+no_zk_required_command = !(ARGV & no_zk_required_command_args).empty?
 
 if options[:spark_url] && !(options[:spark_url] =~ URI::regexp)
   print "ERROR; input Spark URL '#{options[:spark_url]}' is not a valid URL\n"
@@ -195,6 +223,11 @@ end
 if options[:yum_repo_url] && !(options[:yum_repo_url] =~ URI::regexp)
   print "ERROR; input yum repository URL '#{options[:yum_repo_url]}' is not a valid URL\n"
   exit 6
+end
+
+if options[:inventory_file] && !File.file?(options[:inventory_file])
+  print "ERROR; the if a zookeeper list is defined, a zookeeper inventory file must also be provided\n"
+  exit 2
 end
 
 # if a local variables file was passed in, check and make sure it's a valid filename
@@ -270,7 +303,39 @@ if provisioning_command || ip_required
           print "ERROR; input Spark master addresses #{not_in_spark_array} are not in the list of Spark addresses\n"
           exit 2
         end
-        spark_non_master_array = spark_addr_array - spark_master_array
+        # when provisioning a multi-master Spark cluster, we **must** have an associated zookeeper
+        # ensemble consisting of an odd number of nodes greater than three, but less than seven
+        # (any other topology is not supported, so an error is thrown)
+        if spark_master_array.size > 1 && !no_zk_required_command
+          if !options[:inventory_file]
+            print "ERROR; A zookeeper inventory file must be supplied (using the `-i, --inventory-file` flag)\n"
+            print "       containing the (static) inventory file for an existing Zookeeper ensemble when\n"
+            print "       provisioning a multi-master Spark cluster\n"
+            exit 1
+          else
+            # parse the inventory file that was passed in and retrieve the list of host addresses from it
+            zookeeper_addr_array = addr_list_from_inventory_file(options[:inventory_file])
+            # and check to make sure that an appropriate number of zookeeper addresses were
+            # found in the inventory file (the size of the ensemble should be an odd number
+            # between three and seven)
+            if !(VALID_ZK_ENSEMBLE_SIZES.include?(zookeeper_addr_array.size))
+              print "ERROR; only a zookeeper cluster with an odd number of elements between three and\n"
+              print "       seven is supported for multi-master Spark deployments; the defined cluster\n"
+              print "       #{zookeeper_addr_array} contains #{zookeeper_addr_array.size} elements\n"
+              exit 5
+            end
+            # finally, we need to make sure that the machines we're deploying Spark to are not the same
+            # machines that make up our zookeeper ensemble (the zookeeper ensemble must be on a separate
+            # set of machines from the Spark cluster)
+            same_addr_list = zookeeper_addr_array & spark_addr_array
+            if same_addr_list.size > 0
+              print "ERROR; the Spark cluster cannot be deployed to the same machines that make up\n"
+              print "       the zookeeper ensemble; requested clusters overlap for the machines at\n"
+              print "       #{same_addr_list}\n"
+              exit 7
+            end
+          end
+        end
       end
     end
   end
@@ -283,6 +348,10 @@ end
 if spark_non_master_array.size == 0
   spark_non_master_array = spark_addr_array
 end
+
+# and determine which of the input nodes are *not* master nodes
+# (these are the worker nodes)
+spark_non_master_array = spark_addr_array - spark_master_array
 
 # and set the value for options[:spark_master_array] to the spark_master_array
 # (we will use this value when provisioning our master and non-master nodes, below)
