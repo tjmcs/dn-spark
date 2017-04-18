@@ -15,11 +15,58 @@ $ vagrant -s="192.168.34.88,192.168.34.89,192.168.34.90" -m="192.168.34.88" up
 
 This command will create a three-node Spark cluster, where the first node in the list of Spark IP addresses (passed in using the `-s, --spark-list` flag) is configured as the master node (the list of master nodes is passed in using the `-m, --master-nodes` flag). It should be noted here that if any of the IP addresses listed in the list of master nodes does not also appear in the list of Spark IP addresses, an error will be thrown. Similarly, if there is more than one Spark IP address listed and a list of master nodes is not provided, an error will be thrown by the `vagrant` command.
 
-As was noted in our discussion of the various supported [deployment scenarios](Deployment-Scenarios.md), the playbook in this repository cna be used to perform multi-master Spark cluster deployments, and the [Vagrantfile](../Vagrantfile) in this repository supports that same functionality. When deploying a multi-master Spark cluster deployment, a Zookeeper inventory file for the Zookeeper ensemble that the master nodes should use to communicate with each other is required, and this inventory file is passed into the [Vagrantfile](../Vagrantfile) using the `-i, --inventory-file` command-line argument:
+As was noted in our discussion of the various supported [deployment scenarios](Deployment-Scenarios.md), the playbook in this repository can be used to perform multi-master Spark cluster deployments, and the [Vagrantfile](../Vagrantfile) in this repository supports that same functionality. When deploying a multi-master Spark cluster deployment, a Zookeeper inventory file for the Zookeeper ensemble that the master nodes should use to communicate with each other is required, and this inventory file can take one of two forms. It could either just contain a list of the nodes in the Zookeeper ensemble and the information needed to connect to those nodes:
+
+```bash
+$ cat zookeeper_inventory
+# example inventory file for a clustered deployment
+
+192.168.34.18 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2200 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-zookeeper/.vagrant/machines/192.168.34.18/virtualbox/private_key'
+192.168.34.19 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2201 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-zookeeper/.vagrant/machines/192.168.34.19/virtualbox/private_key'
+192.168.34.20 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2202 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-zookeeper/.vagrant/machines/192.168.34.20/virtualbox/private_key'
+
+$
+```
+
+Or it could contain the combined information for the members of the Zookeeper ensemble and multi-master Spark cluster that we are provisioning, with the hosts broken out into `spark` and `zookeeper` host groups:
+
+```bash
+$ cat combined_inventory
+# example combined inventory file for clustered deployment
+
+192.168.34.88 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2203 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-spark/.vagrant/machines/192.168.34.88/virtualbox/private_key'
+192.168.34.89 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2204 ansible_ssh_user='vagrant'
+ansible_ssh_private_key_file='/tmp/dn-spark/.vagrant/machines/192.168.34.89/virtualbox/private_key'
+192.168.34.90 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2205 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-spark/.vagrant/machines/192.168.34.90/virtualbox/private_key'
+192.168.34.91 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2206 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-spark/.vagrant/machines/192.168.34.91/virtualbox/private_key'
+192.168.34.92 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2207 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-spark/.vagrant/machines/192.168.34.92/virtualbox/private_key'
+192.168.34.93 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2208 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-spark/.vagrant/machines/192.168.34.93/virtualbox/private_key'
+192.168.34.94 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2209 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-spark/.vagrant/machines/192.168.34.94/virtualbox/private_key'
+192.168.34.18 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2200 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-zookeeper/.vagrant/machines/192.168.34.18/virtualbox/private_key'
+192.168.34.19 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2201 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-zookeeper/.vagrant/machines/192.168.34.19/virtualbox/private_key'
+192.168.34.20 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2202 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-zookeeper/.vagrant/machines/192.168.34.20/virtualbox/private_key'
+
+[spark]
+192.168.34.88
+192.168.34.89
+192.168.34.90
+192.168.34.91
+192.168.34.92
+192.168.34.93
+192.168.34.94
+
+[zookeeper]
+192.168.34.18
+192.168.34.19
+192.168.34.20
+
+```
+
+Assuming that in this example we are using the second form of this inventory file, then the following command will create a four node Spark cluster containing two master nodes and two worker nodes, where the master nodes are configured to talk with the three node Zookeeper ensemble defined in that same static inventory file:
 
 ```bash
 $ vagrant -s="192.168.34.88,192.168.34.89,192.168.34.90,192.168.34.91" \
-    -m="192.168.34.88,192.168.34.89" -i='./zookeeper_inventory' up
+    -m="192.168.34.88,192.168.34.89" -i='./combined_inventory' up
 ```
 
 In terms of how it all works, the [Vagrantfile](../Vagrantfile) is written in such a way that the following sequence of events occurs when the `vagrant ... up` command shown above is run:
@@ -51,7 +98,7 @@ To provision the machines that were created above and configure those machines a
 
 ```bash
 $ vagrant -s="192.168.34.88,192.168.34.89,192.168.34.90,192.168.34.91" \
-    -m="192.168.34.88,192.168.34.89" -i='./zookeeper_inventory' provision
+    -m="192.168.34.88,192.168.34.89" -i='./combined_inventory' provision
 ```
 
 That command will attach to the named instances and run the playbook in this repository's [site.yml](../site.yml) file on those node (first on the master nodes, then on the worker nodes), resulting in a Spark cluster consisting of the nodes that were created in the `vagrant ... up --no-provision` command that was shown, above.

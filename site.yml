@@ -19,7 +19,7 @@
           - { name: spark, role: master, invert_match: true }
           - { name: spark, role: master }
           - name: zookeeper
-      when: cloud == 'aws' or cloud == 'osp'
+      when: inventory_type == 'dynamic'
     - include_role:
         name: build-app-host-groups
       vars:
@@ -27,7 +27,7 @@
           - { name: spark, node_list: "{{host_inventory}}" }
           - { name: spark_master, node_list: "{{spark_master_nodes | default([])}}" }
           - { name: zookeeper, inventory_file: "{{zookeeper_inventory_file}}" }
-      when: cloud == "vagrant"
+      when: inventory_type == 'static'
     - set_fact:
         spark_nodes: "{{spark_nodes | difference(groups['spark_skip'] | default([]))}}"
       when: (groups['spark_skip'] | default([])) != []
@@ -51,7 +51,7 @@
   tasks:
       - add_host:
           name: "{{item}}"
-          groups: spark
+          groups: spark,spark_nodes
         with_items: "{{groups['spark_master']}}"
         when: master_nodes_only is defined and master_nodes_only
 
@@ -69,7 +69,7 @@
 # Then, deploy Spark to the nodes in the spark host group that was passed in (if there
 # is more than one node passed in, those nodes will be configured as a single Spark cluster)
 - name: Install/configure servers (spark)
-  hosts: spark
+  hosts: spark:&spark_nodes
   gather_facts: no
   vars_files:
     - vars/spark.yml

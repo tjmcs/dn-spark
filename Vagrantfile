@@ -23,17 +23,15 @@ end
 
 # a function that is used to parse Ansible (static) inventory files and
 # return a list of the node addresses contained in the file
-def addr_list_from_inventory_file(inventory_file)
-  first_field_list = []
-  File.open(inventory_file, 'r') do |f|
-    f.each_line do |line|
-      # grab the first field from each line
-      first_field_list << line.gsub(/\s+/, ' ').strip.split(" ")[0]
-    end
-  end
-  # return the entries that look like IP addresses (skipping the rest)
-  # and only return the unique values in the resulting list
-  first_field_list.select { |addr| (addr =~ Resolv::IPv4::Regex) }.uniq
+def addr_list_from_inventory_file(inventory_file, group_name)
+  inventory_str = `./common-utils/inventory/static/hostsfile.py --filename #{inventory_file} --list`
+  inventory_json = JSON.parse(inventory_str)
+  inventory_group = inventory_json[group_name]
+  # if we found a corresponding group in the inventory file, then
+  # return the hosts list in that group
+  return inventory_group['hosts'] if inventory_group
+  # otherwise, return the keys in the 'hostvars' hash map under the '_meta' hash map
+  inventory_json['_meta']['hostvars'].keys
 end
 
 # and define a function that we'll use during the provisioning process
@@ -57,7 +55,7 @@ def setup_ansible_config(ansible, provisioned_nodes, options)
     host_inventory: provisioned_nodes,
     reset_proxy_settings: options[:reset_proxy_settings],
     yum_repo_url: options[:yum_repo_url],
-    cloud: "vagrant",
+    inventory_type: "static",
     data_iface: "eth1",
     api_iface: "eth2",
     zookeeper_inventory_file: options[:inventory_file]
@@ -314,7 +312,7 @@ if provisioning_command || ip_required
             exit 1
           else
             # parse the inventory file that was passed in and retrieve the list of host addresses from it
-            zookeeper_addr_array = addr_list_from_inventory_file(options[:inventory_file])
+            zookeeper_addr_array = addr_list_from_inventory_file(options[:inventory_file], 'zookeeper')
             # and check to make sure that an appropriate number of zookeeper addresses were
             # found in the inventory file (the size of the ensemble should be an odd number
             # between three and seven)
