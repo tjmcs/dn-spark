@@ -55,7 +55,7 @@ To deploy our Spark to our master node, we'd run a command that looks something 
 ```bash
 $ ansible-playbook -i test-cluster-inventory -e "{ \
       host_inventory: ['192.168.34.88'], \
-      cloud: vagrant, spark_master_nodes: ['192.168.34.88'], \
+      inventory_type: static, spark_master_nodes: ['192.168.34.88'], \
       data_iface: eth0, api_iface: eth1, \
       spark_url: 'http://192.168.34.254/apache-spark/spark-2.1.0-bin-hadoop2.7.tgz', \
       yum_repo_url: 'http://192.168.34.254/centos', spark_data_dir: '/data' \
@@ -65,7 +65,7 @@ $ ansible-playbook -i test-cluster-inventory -e "{ \
 Alternatively, rather than passing all of those arguments in on the command-line as extra variables, we can make use of the *local variables file* support that is built into this playbook and construct a YAML file that looks something like this containing the configuration parameters that are being used for this deployment:
 
 ```yaml
-cloud: vagrant
+inventory_type: static
 spark_master_nodes:
     - '192.168.34.88'
 data_iface: eth0
@@ -102,27 +102,60 @@ The deployment of a multi-master Spark cluster brings on additional complexity t
 
 So that's the real difference between a single-master and multi-master Spark cluster deployment. For a single-master deployment (like the one we showed above, in the second scenario) there is no need for an associated Zookeeper ensemble, but in the case of a multi-master Spark cluster such a Zookeeper ensemble is required.
 
-As is the case with the other playbooks we have written where a cluster is integrated with an associated Zookeeper ensemble (the [dn-kafka](https://github.com/Datanexus/dn-kafka), [dn-storm](https://github.com/Datanexus/dn-storm), and [dn-solr](https://github.com/Datanexus/dn-solr) playbooks, for example), the playbook will need to connect to the nodes that make up the associated Zookeeper ensemble and collect information from them, and to do so we'll have to pass in the information that Ansible will need to make those connections to the playbook. We do this by passing in a separate inventory file (the `zookeeper_inventory_file` for the deployment) that contains the inventory information for the members of the Zookeeper ensemble we will be associating with the master nodes of this Spark cluster. For the purposes of this example, let's assume that our `zookeeper_inventory_file` looks something like this:
+As is the case with the other playbooks we have written where a cluster is integrated with an associated Zookeeper ensemble (the [dn-kafka](https://github.com/Datanexus/dn-kafka), [dn-storm](https://github.com/Datanexus/dn-storm), and [dn-solr](https://github.com/Datanexus/dn-solr) playbooks, for example), the playbook will need to connect to the nodes that make up the associated Zookeeper ensemble and collect information from them, and to do so we'll have to pass in the information that Ansible will need to make those connections to the playbook. We can do this by either creating an inventory file that contains just the inventory information for the members of the Zookeeper ensemble we will be associating with the master nodes of this Spark cluster:
 
 ```bash
 $ cat zookeeper-inventory
 # example inventory file for a clustered deployment
 
-192.168.34.18 ansible_ssh_host= 192.168.34.18 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/zk_cluster_private_key'
-192.168.34.19 ansible_ssh_host= 192.168.34.19 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/zk_cluster_private_key'
-192.168.34.20 ansible_ssh_host= 192.168.34.20 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/zk_cluster_private_key'
+192.168.34.18 ansible_ssh_host=192.168.34.18 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/zk_cluster_private_key'
+192.168.34.19 ansible_ssh_host=192.168.34.19 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/zk_cluster_private_key'
+192.168.34.20 ansible_ssh_host=192.168.34.20 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/zk_cluster_private_key'
 
 $
 ```
 
-Furthermore, for this scenario let's also assume that we wanted to deploy our cluster using the same static inventory file we showed above, but in this scenario instead of just using the first node in that inventory file (the "192.168.34.88" node) as a master node, we're going to use the first two nodes in our inventory file (the "192.168.34.88" and "192.168.34.89" nodes) as master nodes. To do so, we just need to make a few small changes to the *local variables file* we showed above; this is what the new local variables file looks like:
+or by creating a new, combined inventory file that contains the inventory information for both the nodes in the Zookeeper ensemble and the nodes in our Spark cluster:
+
+```bash
+$ cat combined-inventory
+# example combined inventory file for clustered deployment
+
+192.168.34.88 ansible_ssh_host=192.168.34.88 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/spark_cluster_private_key'
+192.168.34.89 ansible_ssh_host=192.168.34.89 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/spark_cluster_private_key'
+192.168.34.90 ansible_ssh_host=192.168.34.90 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/spark_cluster_private_key'
+192.168.34.91 ansible_ssh_host=192.168.34.91 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/spark_cluster_private_key'
+192.168.34.92 ansible_ssh_host=192.168.34.92 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/spark_cluster_private_key'
+192.168.34.93 ansible_ssh_host=192.168.34.93 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/spark_cluster_private_key'
+192.168.34.94 ansible_ssh_host=192.168.34.94 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/spark_cluster_private_key'
+192.168.34.18 ansible_ssh_host=192.168.34.18 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/zk_cluster_private_key'
+192.168.34.19 ansible_ssh_host=192.168.34.19 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/zk_cluster_private_key'
+192.168.34.20 ansible_ssh_host=192.168.34.20 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/zk_cluster_private_key'
+
+[spark]
+192.168.34.88
+192.168.34.89
+192.168.34.90
+192.168.34.91
+192.168.34.92
+192.168.34.93
+192.168.34.94
+
+[zookeeper]
+192.168.34.18
+192.168.34.19
+192.168.34.20
+
+```
+
+In either case, we'll pass in this inventory file using the `zookeeper_inventory_file` extra variable. For this scenario let's assume that we wanted to deploy our cluster using the combined static inventory file we showed above, but in this scenario instead of just using the first node in that inventory file (the "192.168.34.88" node) as a master node, we're going to use the first two nodes in our inventory file (the "192.168.34.88" and "192.168.34.89" nodes) as master nodes. To do so, we just need to make a few small changes to the *local variables file* we showed above; this is what the new local variables file looks like:
 
 ```yaml
-cloud: vagrant
+inventory_type: static
 spark_master_nodes:
     - '192.168.34.88'
     - '192.168.34.89'
-zookeeper_inventory_file: './zookeeper-inventory'
+zookeeper_inventory_file: './combined-inventory'
 data_iface: eth0
 api_iface: eth1
 spark_url: 'http://192.168.34.254/apache-spark/spark-2.1.0-bin-hadoop2.7.tgz'
@@ -133,8 +166,8 @@ spark_data_dir: '/data'
 assuming that we had made these changes to the same `test-cluster-deployment-params.yml` file we showed above, the resulting command for the first pass (which deploys our master nodes) would look something like this:
 
 ```bash
-$ ansible-playbook -i test-cluster-inventory -e "{ \
-      host_inventory: ['192.168.34.88', '192.168.34.88'], \
+$ ansible-playbook -i combined-inventory -e "{ \
+      host_inventory: ['192.168.34.88', '192.168.34.89'], \
       local_vars_file: 'test-cluster-deployment-params.yml' \
     }" site.yml
 ```
@@ -144,7 +177,7 @@ Again, once that playbook run is complete, we can browse to the Web UI provided 
 Now that our master nodes are up and running, we can run the second `ansible-playbook` command (making use of the same `local_vars_file` we used when deploying the master nodes, above) to deploy Spark to our worker nodes:
 
 ```bash
-$ ansible-playbook -i test-cluster-inventory -e "{ \
+$ ansible-playbook -i combined-inventory -e "{ \
       host_inventory: ['192.168.34.90', '192.168.34.91'], \
       local_vars_file: 'test-cluster-deployment-params.yml' \
     }" site.yml
@@ -187,7 +220,7 @@ and the worker nodes have been assigned the same set of `Tenant`, `Project`, `Do
 $ ansible-playbook -i common-utils/inventory/osp/openstack -e "{ \
         host_inventory: 'meta-Application_spark:&meta-Cloud_osp:&meta-Tenant_labs:&meta-Project_projectx:&meta-Domain_preprod', \
         skip_nodes_list: ['10.0.1.26', '10.0.1.27'], \
-        application: spark, cloud: osp, tenant: labs, project: projectx, domain: preprod, \
+        application: spark, cloud: osp, tenant: labs, project: projectx, domain: preprod, inventory_type: dynamic, \
         ansible_user: cloud-user, private_key_path: './keys', data_iface: eth0, api_iface: eth1, \
         spark_data_dir: '/data' \
     }" site.yml
@@ -198,7 +231,7 @@ once that playbook run was complete, you could simply re-run the same command (w
 ```bash
 $ ansible-playbook -i common-utils/inventory/osp/openstack -e "{ \
         host_inventory: 'meta-Application_spark:&meta-Cloud_osp:&meta-Tenant_labs:&meta-Project_projectx:&meta-Domain_preprod', \
-        application: spark, cloud: osp, tenant: labs, project: projectx, domain: preprod, \
+        application: spark, cloud: osp, tenant: labs, project: projectx, domain: preprod, inventory_type: dynamic, \
         ansible_user: cloud-user, private_key_path: './keys', data_iface: eth0, api_iface: eth1, \
         spark_data_dir: '/data' \
     }" site.yml
@@ -210,7 +243,7 @@ In an AWS environment, the commands look quite similar; the command used for the
 $ ansible-playbook -i common-utils/inventory/aws/ec2 -e "{ \
         host_inventory: 'tag_Application_spark:&tag_Cloud_aws:&tag_Tenant_labs:&tag_Project_projectx:&tag_Domain_preprod', \
         skip_nodes_list: ['10.0.1.26', '10.0.1.27'], \
-        application: spark, cloud: aws, tenant: labs, project: projectx, domain: preprod, \
+        application: spark, cloud: aws, tenant: labs, project: projectx, domain: preprod, inventory_type: dynamic, \
         ansible_user: cloud-user, private_key_path: './keys', data_iface: eth0, api_iface: eth1, \
         spark_data_dir: '/data' \
     }" site.yml
@@ -221,7 +254,7 @@ while the command used for the second pass (provisioning the worker nodes) would
 ```bash
 $ ansible-playbook -i common-utils/inventory/aws/ec2 -e "{ \
         host_inventory: 'tag_Application_spark:&tag_Cloud_aws:&tag_Tenant_labs:&tag_Project_projectx:&tag_Domain_preprod', \
-        application: spark, cloud: aws, tenant: labs, project: projectx, domain: preprod, \
+        application: spark, cloud: aws, tenant: labs, project: projectx, domain: preprod, inventory_type: dynamic, \
         ansible_user: cloud-user, private_key_path: './keys', data_iface: eth0, api_iface: eth1, \
         spark_data_dir: '/data' \
     }" site.yml
@@ -241,13 +274,13 @@ In the case of adding worker nodes to an existing cluster, the process is relati
 
 In both the static and dynamic use cases is it critical that the same configuration parameters be passed in during the deployment process that were used when building the initial cluster. The easiest way to manage this is to use a *local inventory file* to manage the configuration parameters that are used for a given cluster, then pass in that file as an argument to the `ansible-playbook` command that you are running to add nodes to that cluster. That said, in the examples we show (below) we will define the configuration parameters that were set to non-default values in the previous playbook runs as extra variables that are passed into the `ansible-playbook` command on the command-line for clarity.
 
-To provide a couple of examples of how this process of growing a cluster works, this command could be used to add three new nodes to the existing Spark cluster that was created in the third scenario (the multi-master clustered deployment), above, if we were using the same `test-cluster-inventory` (static) inventory file:
+To provide a couple of examples of how this process of growing a cluster works, this command could be used to add three new nodes to the existing Spark cluster that was created in the third scenario (the multi-master clustered deployment), above, if we were using the same `combined-inventory` (static) inventory file:
 
 ```bash
-$ ansible-playbook -i test-cluster-inventory -e "{ \
-      host_inventory: ['192.168.34.91', '192.168.34.92', '192.168.34.93'], \
-      cloud: vagrant, spark_master_nodes: ['192.168.34.88', '192.168.34.89'], \
-      data_iface: eth0, api_iface: eth1, \
+$ ansible-playbook -i combined-inventory -e "{ \
+      host_inventory: ['192.168.34.92', '192.168.34.93', '192.168.34.94'], \
+      inventory_type: static, spark_master_nodes: ['192.168.34.88', '192.168.34.89'], \
+      data_iface: eth0, api_iface: eth1, zookeeper_inventory_file: './combined-inventory', \
       spark_url: 'http://192.168.34.254/apache-spark/spark-2.1.0-bin-hadoop2.7.tgz', \
       yum_repo_url: 'http://192.168.34.254/centos', spark_data_dir: '/data' \
     }" site.yml
@@ -256,7 +289,7 @@ $ ansible-playbook -i test-cluster-inventory -e "{ \
 Or, if we wanted to take make use of the *local variables file* we defined in that same third scenario, above, we could run this command instead:
 
 ```bash
-$ ansible-playbook -i test-cluster-inventory -e "{ \
+$ ansible-playbook -i combined-inventory -e "{ \
       host_inventory: ['192.168.34.92', '192.168.34.93', '192.168.34.94'], \
       local_vars_file: 'test-cluster-deployment-params.yml' \
     }" site.yml
@@ -270,7 +303,7 @@ As an example of the dynamic inventory use case, this command could be used to a
 $ ansible-playbook -i common-utils/inventory/osp/openstack -e "{ \
         host_inventory: 'meta-Application_spark:&meta-Cloud_osp:&meta-Tenant_labs:&meta-Project_projectx:&meta-Domain_preprod', \
         skip_nodes_list: ['10.0.1.26', '10.0.1.27'], \
-        application: spark, cloud: osp, tenant: labs, project: projectx, domain: preprod, \
+        application: spark, cloud: osp, tenant: labs, project: projectx, domain: preprod, inventory_type: dynamic, \
         ansible_user: cloud-user, private_key_path: './keys', data_iface: eth0, api_iface: eth1, \
         spark_data_dir: '/data' \
     }" site.yml
