@@ -32,5 +32,9 @@ spark_master_webui_port: 8080
 spark_worker_port: 7178
 spark_worker_webui_port: 8181
 
+# used to install spark from a local gzipped tarfile uploaded from the
+# Ansible host (if it exists and is not an empty string)
+local_spark_file: ""
+
 # path used to access private keys (defaults to the current working directory)
 private_key_path: "."

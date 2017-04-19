@@ -1,5 +1,13 @@
 # (c) 2017 DataNexus Inc.  All Rights Reserved
 ---
+# First, setup a couple of facts so that can test whether we're uploading the Spark
+# distribution from a file local to the Ansible node or downloading the distribution
+# from a URL
+- set_fact:
+    install_from_dir: "{{not(local_spark_file is undefined or local_spark_file is none or local_spark_file | trim == '')}}"
+- set_fact:
+    install_from_url: "{{not(spark_url is undefined or spark_url is none or spark_url | trim == '')}}"
+  when: not(install_from_dir)
 # set a fact containing the appropriate (private) IP addresses of the spark_master_nodes
 # (if a list of spark_master_nodes was passed in)
 - set_fact:
@@ -7,10 +15,10 @@
   when: spark_master_nodes != []
 - set_fact:
     spark_data_ips: "{{spark_data_ips | default([data_addr])}}"
-# download the Spark distribution and unpack it into the proper directory
+# If we're installing from a URL, then download the Spark
+# distribution from that URL
 - block:
-  # download the Spark distribution from the input URL
-  - name: Download spark distribution to /tmp
+  - name: Download Spark distribution to /tmp
     get_url:
       url: "{{spark_url}}"
       dest: /tmp
@@ -19,6 +27,22 @@
     environment: "{{environment_vars}}"
   - set_fact:
       spark_filename: "{{spark_url | basename}}"
+  when: install_from_url is defined and install_from_url
+# If we're installing from a local file, then upload the Spark
+# distribution from that local file
+- block:
+  - name: Upload Spark distribution from a local directory to /tmp
+    copy:
+      src: "{{local_spark_file}}"
+      dest: "/tmp"
+      mode: 0644
+  - set_fact:
+      spark_filename: "{{local_spark_file | basename}}"
+  when: install_from_dir
+# regardless of which option was used, we need to unpack the
+# distribution file and setup the basic configuration options
+# using a template
+- block:
   # create the directory Spark will be unpacked into
   - name: Create Spark home directory {{spark_dir}}
     file:
