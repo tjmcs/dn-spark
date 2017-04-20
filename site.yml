@@ -26,7 +26,7 @@
         host_group_list:
           - { name: spark, node_list: "{{host_inventory}}" }
           - { name: spark_master, node_list: "{{spark_master_nodes | default([])}}" }
-          - { name: zookeeper, inventory_file: "{{zookeeper_inventory_file}}" }
+          - { name: zookeeper, inventory_file: "{{zookeeper_inventory_file | default(none)}}" }
       when: inventory_type == 'static'
     - set_fact:
         spark_nodes: "{{spark_nodes | difference(groups['spark_skip'] | default([]))}}"
