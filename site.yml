@@ -41,7 +41,7 @@
 # variable that was passed in as part of this playbook run) if a list of "public"  Zookeeper
 # IP addresses was passed in.
 - name: Gather facts from Zookeeper host group (if defined)
-  hosts: zookeeper
+  hosts: zookeeper:&zookeeper_nodes
   tasks: []
 
 # Build a spark group from the spark_master host group if no non-master nodes were found
