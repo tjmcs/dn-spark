@@ -75,4 +75,10 @@
       mode: 0644
       owner: "{{spark_user}}"
       group: "{{spark_group}}"
+  - name: Add bindAddress entry (if api_addr is different from data_addr)
+    lineinfile:
+      dest: "{{spark_dir}}/conf/spark-defaults.conf"
+      line: "spark.driver.bindAddress     {{api_addr}}"
+      insertafter: EOF
+    when: api_addr != data_addr
   become: true

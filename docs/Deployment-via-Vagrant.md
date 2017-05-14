@@ -25,66 +25,39 @@ $ cat zookeeper_inventory
 192.168.34.19 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2201 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-zookeeper/.vagrant/machines/192.168.34.19/virtualbox/private_key'
 192.168.34.20 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2202 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-zookeeper/.vagrant/machines/192.168.34.20/virtualbox/private_key'
 
-$
-```
-
-Or it could contain the combined information for the members of the Zookeeper ensemble and multi-master Spark cluster that we are provisioning, with the hosts broken out into `spark` and `zookeeper` host groups:
-
-```bash
-$ cat combined_inventory
-# example combined inventory file for clustered deployment
-
-192.168.34.88 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2203 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-spark/.vagrant/machines/192.168.34.88/virtualbox/private_key'
-192.168.34.89 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2204 ansible_ssh_user='vagrant'
-ansible_ssh_private_key_file='/tmp/dn-spark/.vagrant/machines/192.168.34.89/virtualbox/private_key'
-192.168.34.90 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2205 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-spark/.vagrant/machines/192.168.34.90/virtualbox/private_key'
-192.168.34.91 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2206 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-spark/.vagrant/machines/192.168.34.91/virtualbox/private_key'
-192.168.34.92 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2207 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-spark/.vagrant/machines/192.168.34.92/virtualbox/private_key'
-192.168.34.93 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2208 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-spark/.vagrant/machines/192.168.34.93/virtualbox/private_key'
-192.168.34.94 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2209 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-spark/.vagrant/machines/192.168.34.94/virtualbox/private_key'
-192.168.34.18 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2200 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-zookeeper/.vagrant/machines/192.168.34.18/virtualbox/private_key'
-192.168.34.19 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2201 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-zookeeper/.vagrant/machines/192.168.34.19/virtualbox/private_key'
-192.168.34.20 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2202 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/tmp/dn-zookeeper/.vagrant/machines/192.168.34.20/virtualbox/private_key'
-
-[spark]
-192.168.34.88
-192.168.34.89
-192.168.34.90
-192.168.34.91
-192.168.34.92
-192.168.34.93
-192.168.34.94
-
 [zookeeper]
 192.168.34.18
 192.168.34.19
 192.168.34.20
 
+$
 ```
 
-Assuming that in this example we are using the second form of this inventory file, then the following command will create a four node Spark cluster containing two master nodes and two worker nodes, where the master nodes are configured to talk with the three node Zookeeper ensemble defined in that same static inventory file:
+Given this static inventory file for the Zookeeper ensemble we want to use with our Spark cluster, a command like the following could be used to build a new four node Spark cluster consisting of two master nodes and two worker nodes:
 
 ```bash
 $ vagrant -s="192.168.34.88,192.168.34.89,192.168.34.90,192.168.34.91" \
-    -m="192.168.34.88,192.168.34.89" -i='./combined_inventory' up
+    -m="192.168.34.88,192.168.34.89" -i='./zookeeper_inventory' up
 ```
+
+If a Zookeeper inventory file is not provided when building a multi-master Spark cluster, or if the file passed in does not contain the information needed to connect to one or more Kafka nodes, then an error will be thrown by the `vagrant` command.
 
 In terms of how it all works, the [Vagrantfile](../Vagrantfile) is written in such a way that the following sequence of events occurs when the `vagrant ... up` command shown above is run:
 
 1. All of the virtual machines in the cluster (the addresses in the `-s, --spark-list`) are created
-1. Spark is deployed to the master nodes (the nodes with addresses in the `-m, --master-nodes` list) using the Ansible playbook in the [site.yml](../site.yml) file in this repository; if we are performing a multi-master deployment then the inventory information in the `zookeeper_inventory_file` that is passed into the playbook is used to obtain the information needed to configure these master nodes to talk with each other throught that Zookeeper ensemble
+1. Spark is deployed to the master nodes (the nodes with addresses in the `-m, --master-nodes` list) using one of the plays in the Ansible playbook in the [provision-spark.yml](../provision-spark.yml) file in this repository; if we are performing a multi-master deployment then the inventory information in the `zookeeper_inventory_file` that is passed into the playbook is used to obtain the information needed to configure these master nodes to talk with each other throught that Zookeeper ensemble
 1. The `spark-master` service is started on all of the (master) nodes that were just provisioned
-1. Spark then is deployed to the worker nodes using the same Ansible playbook; the list of master nodes that was passed in using the `-m, --master-nodes` flag are configure each of those instances to talk to the master nodes and join the cluster when they start up
+1. Spark then is deployed to the worker nodes by a second play in the same Ansible playbook; the list of master nodes is used to configure each of those worker nodes to talk to the master nodes and join the cluster when they start up
 1. Finally, the `spark-worker` service is started on all of the (worker) nodes that were just provisioned
 
-Once the first provisioning pass in the [Vagrantfile](../Vagrantfile) is complete (step 2), the `spark-master` service starts automatically (step 3). At that point, we can browse to the Web UI provided by any of our master nodes (either `http://192.168.34.88:8080` or `http://192.168.34.89:8080` in this example) to view the detailed status of the the master node (it's `URL`, `REST URL`, number of `Alive Workers`, number of `Cores in use`, amount of `Memory in use`, number of `Applications` running and complete, etc.).
+Once the first play in deployment process is complete, we can browse to the Web UI provided by any of our master nodes (either `http://192.168.34.88:8080` or `http://192.168.34.89:8080` in this example) to view the detailed status of the the master node (it's `URL`, `REST URL`, number of `Alive Workers`, number of `Cores in use`, amount of `Memory in use`, number of `Applications` running and complete, etc.).
 
-Once the second provisioning pass is complete (step 4) and the `spark-worker` service has been started on the worker nodes (step 5), those nodes register themselves with the active master node to join the cluster. When those two steps are complete, we'll be able to see those nodes under the list of `Workers` in the active master node's Web UI (either `http://192.168.34.88:8080` or `http://192.168.34.89:8080` in this example). In addition, we can also browse to the Web UI provided by each of the worker nodes (at `http://192.168.34.90:8181` and `http://192.168.34.91:8181`, respectively) to view their detailed status (their `ID` in the cluster, the configured `Master URL`, number of `Cores`, available `Memory`, and the list of `Running Executors` (which should be empty since no jobs have been deployed to the cluster yet).
+Once the second play is complete and the `spark-worker` service has been started on the worker nodes, those nodes register themselves with the active master node to join the cluster. When those two steps are complete, we will be able to see those nodes under the list of `Workers` in the active master node's Web UI (either `http://192.168.34.88:8080` or `http://192.168.34.89:8080` in this example). In addition, we can also browse to the Web UI provided by each of the worker nodes (at `http://192.168.34.90:8181` and `http://192.168.34.91:8181`, respectively) to view their detailed status (their `ID` in the cluster, the configured `Master URL`, number of `Cores`, available `Memory`, and the list of `Running Executors` (which should be empty since no jobs have been deployed to the cluster yet).
 
 So, to recap, by using a single `vagrant ... up` command we were able to quickly spin up a cluster consisting of of four Spark nodes (two master nodes and two worker nodes), and a similar `vagrant ... up` command could be used to build a cluster consisting of any number of master and worker nodes.
 
 ## Separating instance creation from provisioning
-While the `vagrant up` commands that are shown above can be used to easily deploy Spark to a single node or to build a Spark cluster consisting of multiple nodes, the [Vagrantfile](../Vagrantfile) included in this distribution also supports separating out the creation of the virtual machine from the provisioning of that virtual machine using the Ansible playbook contained in this repository's [site.yml](../site.yml) file.
+While the `vagrant up` commands that are shown above can be used to easily deploy Spark to a single node or to build a Spark cluster consisting of multiple nodes, the [Vagrantfile](../Vagrantfile) included in this distribution also supports separating out the creation of the virtual machine from the provisioning of that virtual machine using the Ansible playbook contained in this repository's [provision-spark.yml](../provision-spark.yml) file.
 
 To create a set of virtual machines that we plan on using to build a Spark cluster without provisioning Spark to those machines, simply run a command similar to the following:
 
@@ -98,10 +71,10 @@ To provision the machines that were created above and configure those machines a
 
 ```bash
 $ vagrant -s="192.168.34.88,192.168.34.89,192.168.34.90,192.168.34.91" \
-    -m="192.168.34.88,192.168.34.89" -i='./combined_inventory' provision
+    -m="192.168.34.88,192.168.34.89" -i='./zookeeper_inventory' provision
 ```
 
-That command will attach to the named instances and run the playbook in this repository's [site.yml](../site.yml) file on those node (first on the master nodes, then on the worker nodes), resulting in a Spark cluster consisting of the nodes that were created in the `vagrant ... up --no-provision` command that was shown, above.
+That command will attach to the named instances and run the playbook in this repository's [provision-spark.yml](../provision-spark.yml) file on those node (first on the master nodes, then on the worker nodes), resulting in a Spark cluster consisting of the nodes that were created in the `vagrant ... up --no-provision` command that was shown, above.
 
 ## Additional vagrant deployment options
 While the commands shown above will install Spark with a reasonable, default configuration from a standard location, there are additional command-line parameters that can be used to override the default values that are embedded in the [vars/spark.yml](../vars/spark.yml) file. Here is a complete list of the command-line flags that can be included in any `vagrant ... up` or `vagrant ... provision` command:

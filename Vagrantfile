@@ -28,74 +28,9 @@ def addr_list_from_inventory_file(inventory_file, group_name)
   inventory_json = JSON.parse(inventory_str)
   inventory_group = inventory_json[group_name]
   # if we found a corresponding group in the inventory file, then
-  # return the hosts list in that group
-  return inventory_group['hosts'] if inventory_group
-  # otherwise, return the keys in the 'hostvars' hash map under the '_meta' hash map
-  inventory_json['_meta']['hostvars'].keys
-end
-
-# and define a function that we'll use during the provisioning process
-# to reduce code duplication (since we provision clusters in two passes
-# that are essentially identical)
-def setup_ansible_config(ansible, provisioned_nodes, options)
-  # set the limit to 'all' in order to provision all of machines on the
-  # list in a single playbook run
-  ansible.limit = "all"
-  ansible.playbook = "site.yml"
-  ansible.groups = {
-    spark: provisioned_nodes
-  }
-  ansible.extra_vars = {
-    proxy_env: {
-      http_proxy: options[:proxy],
-      no_proxy: options[:no_proxy],
-      proxy_username: options[:proxy_username],
-      proxy_password: options[:proxy_password]
-    },
-    host_inventory: provisioned_nodes,
-    reset_proxy_settings: options[:reset_proxy_settings],
-    yum_repo_url: options[:yum_repo_url],
-    inventory_type: "static",
-    data_iface: "eth1",
-    api_iface: "eth2",
-    zookeeper_inventory_file: options[:inventory_file]
-  }
-
-  # if defined, set the 'extra_vars[:spark_url]' value to the value that was passed in on
-  # the command-line (eg. "https://10.0.2.2/spark-2.1.0-bin-without-hadoop.tgz")
-  if options[:spark_url]
-    ansible.extra_vars[:spark_url] = options[:spark_url]
-  end
-
-  # if defined, set the 'extra_vars[:spark_version]' value to the value that was passed in on
-  # the command-line (eg. "2.1.0")
-  if options[:spark_version]
-    ansible.extra_vars[:spark_version] = options[:spark_version]
-  end
-
-  # if defined, set the 'extra_vars[:spark_dir]' value to the value that was passed in on
-  # the command-line (eg. "/opt/apache-spark")
-  if options[:spark_dir]
-    ansible.extra_vars[:spark_dir] = options[:spark_dir]
-  end
-
-  # if defined, set the 'extra_vars[:spark_data_dir]' value to the value that was passed in on
-  # the command-line (eg. "/var/lib")
-  if options[:spark_data_dir]
-    ansible.extra_vars[:spark_data_dir] = options[:spark_data_dir]
-  end
-
-  # if defined, set the 'extra_vars[:local_vars_file]' value to the value that was passed in
-  # on the command-line (eg. "/tmp/local-vars-file.yml")
-  if options[:local_vars_file]
-    ansible.extra_vars[:local_vars_file] = options[:local_vars_file]
-  end
-
-  # if defined, set the 'extra_vars[:spark_master_nodes]' value to the value that was passed in on
-  # the command-line (eg. "127.0.0.1")
-  if options[:spark_master_array].size > 0
-    ansible.extra_vars[:spark_master_nodes] = options[:spark_master_array]
-  end
+  # return the hosts list in that group, otherwise, return the keys
+  # in the 'hostvars' hash map under the '_meta' hash map
+  (inventory_group ? inventory_group['hosts'] : inventory_json['_meta']['hostvars'].keys)
 end
 
 # initialize a few values
@@ -311,7 +246,8 @@ if provisioning_command || ip_required
             print "       provisioning a multi-master Spark cluster\n"
             exit 1
           else
-            # parse the inventory file that was passed in and retrieve the list of host addresses from it
+            # parse the inventory file that was passed in and retrieve the list
+            # of zookeeper addresses from it
             zookeeper_addr_array = addr_list_from_inventory_file(options[:inventory_file], 'zookeeper')
             # and check to make sure that an appropriate number of zookeeper addresses were
             # found in the inventory file (the size of the ensemble should be an odd number
@@ -351,10 +287,6 @@ end
 # (these are the worker nodes)
 spark_non_master_array = spark_addr_array - spark_master_array
 
-# and set the value for options[:spark_master_array] to the spark_master_array
-# (we will use this value when provisioning our master and non-master nodes, below)
-options[:spark_master_array] = spark_master_array
-
 # All Vagrant configuration is done below. The "2" in Vagrant.configure
 # configures the configuration version (we support older styles for
 # backwards compatibility). Please don't change it unless you know what
@@ -382,7 +314,7 @@ if spark_addr_array.size > 0
         config.proxy.proxy_password     = options[:proxy_password]
       end
     end
-        # Every Vagrant development environment requires a box. You can search for
+    # Every Vagrant development environment requires a box. You can search for
     # boxes at https://atlas.hashicorp.com/search.
     config.vm.box = "centos/7"
     config.vm.box_check_update = false
@@ -391,9 +323,11 @@ if spark_addr_array.size > 0
     # creating VMs, create a VM for each machine; if we're just provisioning the
     # VMs using an ansible playbook, then wait until the last VM in the loop and
     # trigger the playbook runs for all of the nodes simultaneously using the
-    # `site.yml` playbook
+    # `provision-spark.yml` playbook
     spark_addr_array.each do |machine_addr|
       config.vm.define machine_addr do |machine|
+        # disable the default synced folder
+        machine.vm.synced_folder ".", "/vagrant", disabled: true
         # Create a two private networks, which each allow host-only access to the machine
         # using a specific IP.
         machine.vm.network "private_network", ip: machine_addr
@@ -410,18 +344,68 @@ if spark_addr_array.size > 0
         # all of the nodes simultaneously (if the `--no-provision` flag was not
         # set, of course)
         if machine_addr == spark_addr_array[-1]
-          # now, use the playbook in the `site.yml' file to provision our
-          # nodes with Spark (and configure them as a cluster if there
-          # is more than one node); this provisioning is done in two stages,
-          # first provision the master nodes (if any), then the non-master nodes
-          if spark_master_array.size > 0
-            machine.vm.provision "ansible" do |ansible|
-              setup_ansible_config(ansible, spark_master_array, options)
+          if options[:inventory_file]
+            if !File.directory?('.vagrant/provisioners/ansible/inventory')
+              mkdir_output = `mkdir -p .vagrant/provisioners/ansible/inventory`
             end
+            ln_output = `ln -sf #{File.expand_path(options[:inventory_file])} .vagrant/provisioners/ansible/inventory`
           end
-          if spark_non_master_array.size > 0
-            machine.vm.provision "ansible" do |ansible|
-              setup_ansible_config(ansible, spark_non_master_array, options)
+          # now, use the playbook in the `provision-spark.yml' file to
+          # provision our nodes with Spark (and configure them as a cluster if
+          # there is more than one node)
+          machine.vm.provision "ansible" do |ansible|
+            # first, set the limit to 'all' in order to provision all of machines
+            # in the list in a single playbook run
+            ansible.limit = "all"
+            ansible.playbook = "provision-spark.yml"
+            ansible.groups = {
+              spark: spark_non_master_array,
+              spark_master: spark_master_array
+            }
+            ansible.extra_vars = {
+              proxy_env: {
+                http_proxy: options[:proxy],
+                no_proxy: options[:no_proxy],
+                proxy_username: options[:proxy_username],
+                proxy_password: options[:proxy_password]
+              },
+              data_iface: "eth1",
+              api_iface: "eth2",
+            }
+            # if a local yum repositiory  was set, then set an extra variable
+            # containing the named repository
+            if options[:yum_repo_url]
+              ansible.extra_vars[:yum_repo_url] = options[:yum_repo_url]
+            end
+            # if the flag to reset the proxy settings was set, then set an extra variable
+            # containing that value
+            if options[:reset_proxy_settings]
+              ansible.extra_vars[:reset_proxy_settings] = options[:reset_proxy_settings]
+            end
+            # if defined, set the 'extra_vars[:spark_url]' value to the value that was passed in on
+            # the command-line (eg. "https://10.0.2.2/spark-2.1.0-bin-without-hadoop.tgz")
+            if options[:spark_url]
+              ansible.extra_vars[:spark_url] = options[:spark_url]
+            end
+            # if defined, set the 'extra_vars[:spark_version]' value to the value that was passed in on
+            # the command-line (eg. "2.1.0")
+            if options[:spark_version]
+              ansible.extra_vars[:spark_version] = options[:spark_version]
+            end
+            # if defined, set the 'extra_vars[:spark_dir]' value to the value that was passed in on
+            # the command-line (eg. "/opt/apache-spark")
+            if options[:spark_dir]
+              ansible.extra_vars[:spark_dir] = options[:spark_dir]
+            end
+            # if defined, set the 'extra_vars[:spark_data_dir]' value to the value that was passed in on
+            # the command-line (eg. "/var/lib")
+            if options[:spark_data_dir]
+              ansible.extra_vars[:spark_data_dir] = options[:spark_data_dir]
+            end
+            # if defined, set the 'extra_vars[:local_vars_file]' value to the value that was passed in
+            # on the command-line (eg. "/tmp/local-vars-file.yml")
+            if options[:local_vars_file]
+              ansible.extra_vars[:local_vars_file] = options[:local_vars_file]
             end
           end
         end
