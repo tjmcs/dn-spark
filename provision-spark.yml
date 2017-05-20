@@ -1,0 +1,63 @@
+#!/usr/bin/env ansible-playbook
+#
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+# Build our spark and spark_master host groups
+- name: Create spark and spark_master host groups
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    # if we're using dynamic provisioning; build the host groups from the
+    # meta-data associated with the matching nodes in the selected cloud
+    - block:
+      # load the 'local variables file', if one was defined, to get any variables
+      # we might need from that file when constructing our host groups
+      - name: Load local variables file
+        include_vars:
+          file: "{{local_vars_file}}"
+        when: not (local_vars_file is undefined or local_vars_file is none or local_vars_file | trim == '')
+      # then, build our host groups (spark_master, spark, and zookeeper)
+      - include_role:
+          name: build-app-host-groups
+        vars:
+          host_group_list:
+            - { name: spark, role: master }
+            - { name: spark }
+            - name: zookeeper
+      when: cloud is defined and (cloud == 'aws' or cloud == 'osp')
+
+# Collect some Zookeeper related facts and determine the "private" IP addresses of
+# the nodes in the Zookeeper ensemble (from their "public" IP addresses and the `data_iface`
+# variable that was passed in as part of this playbook run) if a list of "public"  Zookeeper
+# IP addresses was passed in.
+- name: Gather facts from Zookeeper host group (if defined)
+  hosts: zookeeper
+  tasks: []
+
+# Then, deploy Spark to the nodes in the spark_master host group
+- name: Install/configure servers (master nodes)
+  hosts: spark_master
+  gather_facts: no
+  vars_files:
+    - vars/spark.yml
+  vars:
+    - combined_package_list: "{{ (default_packages|default([])) | union(spark_package_list) | union((install_packages_by_tag|default({})).spark|default([])) }}"
+    - cluster_role: master
+    - zookeeper_nodes: "{{groups['zookeeper']}}"
+    - spark_master_nodes: "{{groups['spark_master']}}"
+  tasks:
+    - include: common-flows/provision-nodes.yml static=no
+
+# Once the master nodes have been deployed, repeat the same process to deploy Spark to the nodes in
+# the spark host group
+- name: Install/configure servers (worker nodes)
+  hosts: spark
+  gather_facts: no
+  vars_files:
+    - vars/spark.yml
+  vars:
+    - combined_package_list: "{{ (default_packages|default([])) | union(spark_package_list) | union((install_packages_by_tag|default({})).spark|default([])) }}"
+    - zookeeper_nodes: "{{groups['zookeeper']}}"
+    - spark_master_nodes: "{{groups['spark_master']}}"
+  tasks:
+    - include: common-flows/provision-nodes.yml static=no

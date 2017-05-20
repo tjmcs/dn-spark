@@ -2,7 +2,7 @@
 Playbooks/Roles used to deploy Apache Spark
 
 # Installation
-To install Spark using the [site.yml](site.yml) playbook in this repository, first clone the contents of this repository to a local directory using a command like the following:
+To install Spark using the [provision-spark.yml](provision-spark.yml) playbook in this repository, first clone the contents of this repository to a local directory using a command like the following:
 
 ```bash
 $ git clone --recursive https://github.com/Datanexus/dn-spark
@@ -13,7 +13,7 @@ That command will pull down the repository and it's dependencies. Currently this
 The only other requirements for using the playbook in this repository are a relatively recent (v2.x) release of Ansible. The easiest way to obtain a recent release if Ansible is via a `pip install`, which requires that Python and pip are both installed locally. We have performed all of our testing using a recent (2.7.x) version of Python (Python 2); your mileage may vary if you attempt to run the playbook or the attached dynamic inventory scripts under a newer (v3.x) release of Python (Python 3).
 
 # Using this role to deploy Spark
-The [site.yml](site.yml) file at the top-level of this repository supports both single-node Spark deployments and the deployment of multi-node Spark clusters. In addition, this playbook supports the deployment of both single-master and multi-master Spark clusters. In a multi-master Spark cluster, one of the master nodes is active (the master nodes work together through an associated Zookeeper ensemble to elect the that node as their leader), and the other master nodes remain on standby in case the active master node fails (in which case one of the standby master nodes will take over as the new active master node).
+The [provision-spark.yml](provision-spark.yml) file at the top-level of this repository supports both single-node Spark deployments and the deployment of multi-node Spark clusters. In addition, this playbook supports the deployment of both single-master and multi-master Spark clusters. In a multi-master Spark cluster, one of the master nodes is active (the master nodes work together through an associated Zookeeper ensemble to elect the that node as their leader), and the other master nodes remain on standby in case the active master node fails (in which case one of the standby master nodes will take over as the new active master node).
 
 The process of deploying Spark to the nodes in the cluster will vary, depending on whether you are managing your inventory dynamically or statically (more on this topic [here](docs/Dynamic-vs-Static-Inventory.md)), whether you are performing a single-node deployment or are deploying a Spark cluster, whether the cluster being deployed is a single or multi-master cluster, and where you are downloading the packages and dependencies from that are needed to run Spark on those nodes.
 
