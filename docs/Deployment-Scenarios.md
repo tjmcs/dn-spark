@@ -156,17 +156,7 @@ $ ansible-playbook -i combined-inventory -e "{ \
     }" provision-spark.yml
 ```
 
-As an aside, it should be noted here that the [provision-spark.yml](../provision-spark.yml) playbook includes a [shebang](https://en.wikipedia.org/wiki/Shebang_(Unix)) line at the beginning of the playbook file. As such, the playbook can be executed directly as a shell script (rather than using the file as the final input to an `ansible-playbook` command). This means that the command that was shown above could also be run as:
-
-```bash
-$ ./provision-spark.yml -i test-cluster-inventory -e "{ \
-      local_vars_file: 'test-cluster-deployment-params.yml' \
-    }"
-```
-
-This form is available as a replacement for any of the `ansible-playbook` commands that we show here; which form you use will likely be a matter of personal preference (since both accomplish the same thing).
-
-Regardless of which command is used (above), once that playbook run is complete, we can browse to the Web UI provided by our both of our master node (which can be found at `http://192.168.34.88:8080` and `http://192.168.34.89:8080` in this example) to view the detailed status of each of those master nodes (it's `URL`, `REST URL`, number of `Alive Workers`, number of `Cores in use`, amount of `Memory in use`, number of `Applications` running and complete, etc.). In doing so, we will see that one of the nodes has a `Status` of `ACTIVE` and the other has a `Status` of `STANDBY`.
+As before, once that playbook run is complete we can browse to the Web UI provided by our both of our master node (which can be found at `http://192.168.34.88:8080` and `http://192.168.34.89:8080` in this example) to view the detailed status of each of those master nodes (it's `URL`, `REST URL`, number of `Alive Workers`, number of `Cores in use`, amount of `Memory in use`, number of `Applications` running and complete, etc.). In doing so, we will see that one of the nodes has a `Status` of `ACTIVE` and the other has a `Status` of `STANDBY`.
 
 Once the worker nodes have registered with the `ACTIVE` master node, we will also be able to see those nodes under the list of `Workers` in that master node's Web UI (either `http://192.168.34.88:8080` or `http://192.168.34.89:8080` in this example). In addition, as was the case with the previous scenario, we can also browse to the Web UI provided by each of the worker nodes (at `http://192.168.34.90:8181` and `http://192.168.34.91:8181`, respectively) to view their detailed status (their `ID` in the cluster, the configured `Master URL`, number of `Cores`, available `Memory`, and the list of `Running Executors` (which should be empty since no jobs have been deployed to the cluster yet).
 
