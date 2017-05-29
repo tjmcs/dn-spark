@@ -4,3 +4,6 @@
 [submodule "common-utils"]
 	path = common-utils
 	url = https://github.com/Datanexus/common-utils.git
+[submodule "common-flows"]
+	path = common-flows
+	url = https://github.com/Datanexus/common-flows
