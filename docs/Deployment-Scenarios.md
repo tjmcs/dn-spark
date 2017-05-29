@@ -1,6 +1,6 @@
 # Example deployment scenarios
 
-There are a five basic deployment scenarios that are supported by this playbook. In the first two (shown below) we'll walk through the deployment of Spark to a single node and the deployment of a multi-node Spark cluster using a static inventory file. In the third scenario, we will demonstrate how the deployment of a multi-master cluster differs from the single-master cluster deployment that is shown in the second scenario. Finally, in the fourth scenario, we will show how the same multi-node Spark cluster deployment shown in the second and third scenarios could be performed using the dynamic inventory scripts for both AWS and OpenStack instead of a static inventory file.
+There are a five basic deployment scenarios that are supported by this playbook. In the first two (shown below) we'll walk through the deployment of Spark to a single node and the deployment of a multi-node Spark cluster using a static inventory file. In the third scenario, we will demonstrate how the deployment of a multi-master cluster differs from the single-master cluster deployment that is shown in the second scenario. In the fourth scenario, we will show how the same multi-node Spark cluster deployment shown in the second and third scenarios could be performed using the dynamic inventory scripts for both AWS and OpenStack instead of a static inventory file. Finally, we'll walk through the process of "growing" an existing cluster by adding nodes to it.
 
 ## Scenario #1: deploying Spark to a single node
 While this is the simplest of the deployment scenarios that are supported by this playbook, it is more than likely that deployment of Spark to a single node is really only only useful for very simple test environments. Even the most basic (default) Spark deployments that are typically shown in online examples of how to deploy Spark are two-node deployments.  Nevertheless, we will start our discussion with this deployment scenario since it is the simplest.
@@ -113,6 +113,9 @@ $ cat combined-inventory
 192.168.34.89 ansible_ssh_host=192.168.34.89 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/spark_cluster_private_key'
 192.168.34.90 ansible_ssh_host=192.168.34.90 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/spark_cluster_private_key'
 192.168.34.91 ansible_ssh_host=192.168.34.91 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/spark_cluster_private_key'
+192.168.34.92 ansible_ssh_host=192.168.34.90 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/spark_cluster_private_key'
+192.168.34.93 ansible_ssh_host=192.168.34.91 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/spark_cluster_private_key'
+
 192.168.34.18 ansible_ssh_host=192.168.34.18 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/zk_cluster_private_key'
 192.168.34.19 ansible_ssh_host=192.168.34.19 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/zk_cluster_private_key'
 192.168.34.20 ansible_ssh_host=192.168.34.20 ansible_ssh_port=22 ansible_ssh_user='cloud-user' ansible_ssh_private_key_file='keys/zk_cluster_private_key'
@@ -153,7 +156,17 @@ $ ansible-playbook -i combined-inventory -e "{ \
     }" provision-spark.yml
 ```
 
-As before, once that playbook run is complete, we can browse to the Web UI provided by our both of our master node (which can be found at `http://192.168.34.88:8080` and `http://192.168.34.89:8080` in this example) to view the detailed status of each of those master nodes (it's `URL`, `REST URL`, number of `Alive Workers`, number of `Cores in use`, amount of `Memory in use`, number of `Applications` running and complete, etc.). In doing so, we will see that one of the nodes has a `Status` of `ACTIVE` and the other has a `Status` of `STANDBY`.
+As an aside, it should be noted here that the [provision-spark.yml](../provision-spark.yml) playbook includes a [shebang](https://en.wikipedia.org/wiki/Shebang_(Unix)) line at the beginning of the playbook file. As such, the playbook can be executed directly as a shell script (rather than using the file as the final input to an `ansible-playbook` command). This means that the command that was shown above could also be run as:
+
+```bash
+$ ./provision-spark.yml -i test-cluster-inventory -e "{ \
+      local_vars_file: 'test-cluster-deployment-params.yml' \
+    }"
+```
+
+This form is available as a replacement for any of the `ansible-playbook` commands that we show here; which form you use will likely be a matter of personal preference (since both accomplish the same thing).
+
+Regardless of which command is used (above), once that playbook run is complete, we can browse to the Web UI provided by our both of our master node (which can be found at `http://192.168.34.88:8080` and `http://192.168.34.89:8080` in this example) to view the detailed status of each of those master nodes (it's `URL`, `REST URL`, number of `Alive Workers`, number of `Cores in use`, amount of `Memory in use`, number of `Applications` running and complete, etc.). In doing so, we will see that one of the nodes has a `Status` of `ACTIVE` and the other has a `Status` of `STANDBY`.
 
 Once the worker nodes have registered with the `ACTIVE` master node, we will also be able to see those nodes under the list of `Workers` in that master node's Web UI (either `http://192.168.34.88:8080` or `http://192.168.34.89:8080` in this example). In addition, as was the case with the previous scenario, we can also browse to the Web UI provided by each of the worker nodes (at `http://192.168.34.90:8181` and `http://192.168.34.91:8181`, respectively) to view their detailed status (their `ID` in the cluster, the configured `Master URL`, number of `Cores`, available `Memory`, and the list of `Running Executors` (which should be empty since no jobs have been deployed to the cluster yet).
 
@@ -177,7 +190,7 @@ In terms of what the command looks like, lets assume for this example that we've
 and the worker nodes have been assigned the same set of `Tenant`, `Project`, `Domain`, and `Application` tags, but they have not been assigned a `Role` tag of any sort. The `ansible-playbook` command used to deploy Spark to our cluster would look something like this:
 
 ```bash
-$ ansible-playbook -i common-utils/inventory/osp/openstack -e "{ \
+$ ansible-playbook -e "{ \
         application: spark, cloud: osp, \
         tenant: labs, project: projectx, domain: preprod, \
         private_key_path: './keys', data_iface: eth0, api_iface: eth1, \
@@ -188,7 +201,7 @@ $ ansible-playbook -i common-utils/inventory/osp/openstack -e "{ \
 In an AWS environment, the command that we would use looks quite similar:
 
 ```bash
-$ AWS_PROFILE=datanexus_west ansible-playbook -i common-utils/inventory/aws/ec2 -e "{ \
+$ AWS_PROFILE=datanexus_west ansible-playbook -e "{ \
         application: spark, cloud: aws, \
         tenant: labs, project: projectx, domain: preprod, \
         private_key_path: './keys', data_iface: eth0, api_iface: eth1, \
@@ -197,3 +210,68 @@ $ AWS_PROFILE=datanexus_west ansible-playbook -i common-utils/inventory/aws/ec2 
 ```
 
 As you can see, these two commands only in terms of the environment variable defined at the beginning of the command-line used to provision to the AWS environment (`AWS_PROFILE=datanexus_west`) and the value defined for the `cloud` variable (`osp` versus `aws`). In both cases the result would be a set of nodes deployed as a Spark cluster, with the master nodes in that cluster configured to talk to each other through the associated (assumed to already be deployed) Zookeeper ensemble. The number of nodes in the Spark cluster and their roles in that cluster will be determined (completely) by the number of nodes in the OpenStack or AWS environment that have been tagged with a matching set of `application`, `role` (for the master nodes), `tenant`, `project` and `domain` tags.
+
+## Scenario #5: adding nodes to a multi-node Spark cluster
+When adding nodes to an existing Spark cluster, we must be careful of a couple of things:
+
+* We don't want to redeploy Spark to the existing nodes in the cluster, only to the new nodes we are adding
+* We want to make sure the nodes we are adding to the cluster are configured properly to join that cluster
+
+In the case of adding (non-master) nodes to an existing cluster, the process is relatively simple. To make matters simpler (and ensure that there is no danger of reprovisioning the nodes in the exiting cluster when attempting to add new nodes to it), we have actually separated out the plays that are used to add nodes to an existing cluster into a separate playbook (the [add-nodes.yml](./add-nodes.yml) file in this repository).
+
+As was mentioned, above, it is critical that the same configuration parameters be passed in during the process of adding new nodes to the cluster as were passed in when building the cluster initially. Spark is not very tolerant of differences in configuration between members of a cluster, so we will want to avoid those situations. The easiest way to manage this is to use a *local inventory file* to manage the configuration parameters that are used for a given cluster, then pass in that file as an argument to the `ansible-playbook` command that you are running to add nodes to that cluster. That said, in the dynamic inventory examples we show (below) we will define the configuration parameters that were set to non-default values in the previous playbook runs as extra variables that are passed into the `ansible-playbook` command on the command-line for clarity.
+
+To provide a couple of examples of how this process of growing a cluster works, we would first like to walk through the process of adding two new (non-master) nodes to the existing Spark cluster that was created using the `combined-inventory` (static) inventory file, above. The first step would be to edit the static inventory file and add the two new nodes to the `spark` host group, then save the resulting file. The host groups defined in the `combined-inventory` file shown above would look like this after those edits:
+
+```
+[spark_master]
+192.168.34.88
+192.168.34.89
+
+[spark]
+192.168.34.90
+192.168.34.91
+192.168.34.92
+192.168.34.93
+
+[zookeeper]
+192.168.34.18
+192.168.34.19
+192.168.34.20
+```
+
+(note that we have only shown the tail of that file; the hosts defined at the start of the file would remain the same). With the new static inventory file in place, the playbook command that we would run to add the three additional nodes to our cluster would look something like this:
+
+```bash
+$ ./add-nodes.yml -i combined-inventory -e "{ \
+      local_vars_file: 'test-cluster-deployment-params.yml' \
+    }"
+```
+
+As you can see, this is essentially the same command we ran previously to provision our initial cluster in the static inventory scenario. The only change to the previous command are that we are using a different playbook (the [add-nodes.yml](../add-nodes.yml) playbook instead of the [provision-spark.yml](../provision-spark.yml) playbook).
+
+To add new nodes to an existing Spark cluster in an AWS or OpenStack environment, we would simply create the new nodes we want to add in that environment and tag them appropriately (using the same `Tenant`, `Application`, `Project`, and `Domain` tags that we used when creating our initial cluster). With those new machines tagged appropriately, the command used to add a new set of (non-master) nodes to an existing cluster in an OpenStack environment would look something like this:
+
+```bash
+$ ansible-playbook -e "{ \
+        application: spark, cloud: osp, \
+        tenant: labs, project: projectx, domain: preprod, \
+        private_key_path: './keys', data_iface: eth0, api_iface: eth1, \
+        spark_data_dir: '/data' \
+    }" add-nodes.yml
+```
+
+The only difference when adding nodes to an AWS environment would be the environment variable that needs to be set at the beginning of the command-line (eg. `AWS_PROFILE=datanexus_west`) and the cloud value that we define within the extra variables that are passed into that `ansible-playbook` command (`aws` instead of `osp`):
+
+```bash
+$ AWS_PROFILE=datanexus_west ansible-playbook -e "{ \
+        application: spark, cloud: aws, \
+        tenant: labs, project: projectx, domain: preprod, \
+        private_key_path: './keys', data_iface: eth0, api_iface: eth1, \
+        spark_data_dir: '/data' \
+    }" add-nodes.yml
+```
+
+As was the case with the static inventory example shown above, the command shown here for adding new nodes to an existing cluster in an AWS or OpenStack cloud (using tags and dynamic inventory) is essentially the same command that was used when deploying the initial cluster, but we are using a different playbook (the [add-nodes.yml](../add-nodes.yml) playbook instead of the [provision-spark.yml](../provision-spark.yml) playbook).
+
+It should be noted that the playbook associated with this role does not currently support the process of adding new master nodes to an existing Spark cluster, only adding non-master nodes. Adding a new master node (or nodes) involves modifying the Spark configuration on every node in the cluster in order to add the new master node (or nodes) to the list of master nodes defined there. This requires that each node's configuration be modified, then that each node be taken offline and brought back online to pick up the configuration change. That process is hard (at best) to automate, so we have made no effort to do so in the current version of this playbook.
