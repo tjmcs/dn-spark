@@ -26,42 +26,19 @@
             - name: zookeeper
       when: cloud is defined and (cloud == 'aws' or cloud == 'osp')
 
-# Collect some Zookeeper related facts and determine the "private" IP addresses of
-# the nodes in the Zookeeper ensemble (from their "public" IP addresses and the `data_iface`
-# variable that was passed in as part of this playbook run) if a list of "public"  Zookeeper
-# IP addresses was passed in.
+# Collect some Zookeeper related facts
 - name: Gather facts from Zookeeper host group (if defined)
   hosts: zookeeper
   tasks: []
 
-# Then, deploy Spark to the nodes in the spark_master host group
+# And gather facts from the master nodes
 - name: Install/configure servers (master nodes)
   hosts: spark_master
-  gather_facts: no
-  vars_files:
-    - vars/spark.yml
-  vars:
-    - combined_package_list: "{{ (default_packages|default([])) | union(spark_package_list) | union((install_packages_by_tag|default({})).spark|default([])) }}"
-    - cluster_role: master
-    - zookeeper_nodes: "{{groups['zookeeper']}}"
-    - spark_master_nodes: "{{groups['spark_master']}}"
-  pre_tasks:
-    # first, initialize the play by loading any `local_vars_file` that may have
-    # been passed in, restarting the network on the target nodes (if desired),
-    # and determining the `data_iface` and `api_iface` values from the input
-    # `iface_description_array` (if one was passed in)
-    - include_role:
-        name: initialize-play
-    # and now that we know the name of our `data_iface`, we can construct the
-    # list of zk_nodes (the data_iface IP addresses of our zookeeper_nodes)
-    - set_fact:
-        zk_nodes: "{{(zookeeper_nodes | default([])) | map('extract', hostvars, [('ansible_' + data_iface), 'ipv4', 'address']) | list}}"
-  # now that we have all of the facts we need, provision the input nodes
-  roles:
-    - role: provision-nodes
+  tasks: []
 
-# Once the master nodes have been deployed, repeat the same process to deploy Spark to the nodes in
-# the spark host group
+# Then, deploy Spark to the new target nodes (those that don't have a
+# spark service configured on them already) and configure those nodes to
+# join the existing cluster
 - name: Install/configure servers (worker nodes)
   hosts: spark
   gather_facts: no
@@ -82,6 +59,8 @@
     # list of zk_nodes (the data_iface IP addresses of our zookeeper_nodes)
     - set_fact:
         zk_nodes: "{{(zookeeper_nodes | default([])) | map('extract', hostvars, [('ansible_' + data_iface), 'ipv4', 'address']) | list}}"
-  # now that we have all of the facts we need, provision the input nodes
+  # now that we have all of the facts we need, add the new (worker) nodes to
+  # the cluster
   roles:
-    - role: provision-nodes
+    - role: add-nodes
+      service_deployed: spark-worker
