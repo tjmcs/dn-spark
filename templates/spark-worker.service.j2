@@ -7,10 +7,9 @@ After=network.target network-online.target
 User=spark
 Group=spark
 Environment=JAVA_HOME={{ java_home }}
-Environment=SPARK_MASTER_HOST={{ spark_data_ips.0 }}
 Environment=SPARK_LOCAL_IP={{ data_addr }}
 WorkingDirectory={{ spark_data_dir }}/spark
-ExecStart={{ spark_dir }}/bin/spark-class org.apache.spark.deploy.worker.Worker spark://{{ spark_master_nodes | join(":{0},".format(spark_master_port)) }}:{{ spark_master_port }} --port {{ spark_worker_port }} --webui-port {{ spark_worker_webui_port }} --properties-file {{ spark_dir }}/conf/spark-defaults.conf --work-dir {{ spark_data_dir }}/spark
+ExecStart={{ spark_dir }}/bin/spark-class org.apache.spark.deploy.worker.Worker spark://{{ spark_master_data_ips | join(":{0},".format(spark_master_port)) }}:{{ spark_master_port }} --port {{ spark_worker_port }} --webui-port {{ spark_worker_webui_port }} --properties-file {{ spark_dir }}/conf/spark-defaults.conf --work-dir {{ spark_data_dir }}/spark
 Restart=on-abort
 
 [Install]

@@ -16,7 +16,7 @@
         include_vars:
           file: "{{local_vars_file}}"
         when: not (local_vars_file is undefined or local_vars_file is none or local_vars_file | trim == '')
-      # then, build our host groups (spark_master, spark, and zookeeper)
+      # then, build our host groups (spark_master, spark, zookeeper, and nginx)
       - include_role:
           name: build-app-host-groups
         vars:
@@ -24,14 +24,17 @@
             - { name: spark, role: master }
             - { name: spark }
             - name: zookeeper
+            - name: nginx
       when: cloud is defined and (cloud == 'aws' or cloud == 'osp')
 
-# Collect some Zookeeper related facts and determine the "private" IP addresses of
-# the nodes in the Zookeeper ensemble (from their "public" IP addresses and the `data_iface`
-# variable that was passed in as part of this playbook run) if a list of "public"  Zookeeper
-# IP addresses was passed in.
+# Collect some Zookeeper related facts (if a `zookeeper` host group is defined)
 - name: Gather facts from Zookeeper host group (if defined)
   hosts: zookeeper
+  tasks: []
+
+# Collect some NGINX related facts (if an `nginx` host group is defined)
+- name: Gather facts from NGINX host group (if defined)
+  hosts: nginx
   tasks: []
 
 # Then, deploy Spark to the nodes in the spark_master host group
@@ -43,8 +46,9 @@
   vars:
     - combined_package_list: "{{ (default_packages|default([])) | union(spark_package_list) | union((install_packages_by_tag|default({})).spark|default([])) }}"
     - cluster_role: master
-    - zookeeper_nodes: "{{groups['zookeeper']}}"
     - spark_master_nodes: "{{groups['spark_master']}}"
+    - zookeeper_nodes: "{{groups['zookeeper'] | default([])}}"
+    - nginx_nodes: "{{groups['nginx'] | default([])}}"
   pre_tasks:
     # first, initialize the play by loading any `local_vars_file` that may have
     # been passed in, restarting the network on the target nodes (if desired),
@@ -53,9 +57,11 @@
     - include_role:
         name: initialize-play
     # and now that we know the name of our `data_iface`, we can construct the
-    # list of zk_nodes (the data_iface IP addresses of our zookeeper_nodes)
+    # list of `zk_nodes` and `ngx_nodes` (the `data_iface` and `api_iface`
+    # addresses of our `zookeeper_nodes` and `nginx_nodes`, respectively)
     - set_fact:
-        zk_nodes: "{{(zookeeper_nodes | default([])) | map('extract', hostvars, [('ansible_' + data_iface), 'ipv4', 'address']) | list}}"
+        zk_nodes: "{{zookeeper_nodes | map('extract', hostvars, [('ansible_' + data_iface), 'ipv4', 'address']) | list}}"
+        ngx_nodes: "{{nginx_nodes | map('extract', hostvars, [('ansible_' + api_iface), 'ipv4', 'address']) | list}}"
   # now that we have all of the facts we need, provision the input nodes
   roles:
     - role: provision-nodes
@@ -69,8 +75,9 @@
     - vars/spark.yml
   vars:
     - combined_package_list: "{{ (default_packages|default([])) | union(spark_package_list) | union((install_packages_by_tag|default({})).spark|default([])) }}"
-    - zookeeper_nodes: "{{groups['zookeeper']}}"
     - spark_master_nodes: "{{groups['spark_master']}}"
+    - zookeeper_nodes: "{{groups['zookeeper'] | default([])}}"
+    - nginx_nodes: "{{groups['nginx'] | default([])}}"
   pre_tasks:
     # first, initialize the play by loading any `local_vars_file` that may have
     # been passed in, restarting the network on the target nodes (if desired),
@@ -79,9 +86,11 @@
     - include_role:
         name: initialize-play
     # and now that we know the name of our `data_iface`, we can construct the
-    # list of zk_nodes (the data_iface IP addresses of our zookeeper_nodes)
+    # list of `zk_nodes` and `ngx_nodes` (the `data_iface` and `api_iface`
+    # addresses of our `zookeeper_nodes` and `nginx_nodes`, respectively)
     - set_fact:
-        zk_nodes: "{{(zookeeper_nodes | default([])) | map('extract', hostvars, [('ansible_' + data_iface), 'ipv4', 'address']) | list}}"
+        zk_nodes: "{{zookeeper_nodes | map('extract', hostvars, [('ansible_' + data_iface), 'ipv4', 'address']) | list}}"
+        ngx_nodes: "{{nginx_nodes | map('extract', hostvars, [('ansible_' + api_iface), 'ipv4', 'address']) | list}}"
   # now that we have all of the facts we need, provision the input nodes
   roles:
     - role: provision-nodes

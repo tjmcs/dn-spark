@@ -1,0 +1,33 @@
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+# if we're deploying master nodes in this play, then add an upstream block
+# containing our master nodes and fill in the root URI location blocks with
+# a proxy_pass directive pointing to that upstream block
+- block:
+  - name: Add Spark upstream to NGINX instances
+    replace:
+      dest: /etc/nginx/nginx.conf
+      regexp: '(([^\S\n]*)include /etc/nginx/conf.d/.*)(\n[^\S\n]*\n)([^\S\n]*# redirect)'
+      replace: '\g<1>\n\n\g<2>upstream {{application}} {\n\g<2>}\n\n\g<4>'
+  - name: Add master nodes to upstream block
+    lineinfile:
+      dest: /etc/nginx/nginx.conf
+      insertafter: "    upstream"
+      line: "        server {{item}}:8080;"
+    with_items: "{{spark_master_bind_ips | reverse | list}}"
+  - name: Add Spark location to NGINX server blocks
+    replace:
+      dest: /etc/nginx/nginx.conf
+      regexp: '(([^\S\n]*)location / {)(\n)([^\S\n]*})'
+      replace: '\g<1>\n\g<2>    {{item}}\n\g<4>'
+    with_items:
+      - "proxy_pass http://{{application}};"
+      - "proxy_pass http://{{application}};"
+  - name: Ensure that SELinux allows connections from httpd
+    shell: setsebool httpd_can_network_connect on
+  - name: Restart nginx instance to pickup new configuration
+    service:
+      name: nginx
+      state: restarted
+  become: true
+  when: (ansible_play_hosts | union(spark_master_nodes)) != []

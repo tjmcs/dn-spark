@@ -1,0 +1,3 @@
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+- include: add-proxy-server.yml static=no

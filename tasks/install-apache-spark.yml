@@ -1,9 +1,11 @@
 # (c) 2017 DataNexus Inc.  All Rights Reserved
 ---
-# First, setup a couple of facts so that can test whether we're uploading the Spark
-# distribution from a file local to the Ansible node or downloading the distribution
-# from a URL
+# First, setup a couple of facts so that know which interface the UI should be bound
+# to (based on whether or not we're securing the cluster) and so that we can test
+# whether we're uploading the Spark distribution from a file local to the Ansible node
+# or downloading the distribution from a URL
 - set_fact:
+    bind_iface: "{{(secure_cluster | default(false)) | ternary(data_iface, api_iface)}}"
     install_from_dir: "{{not(local_spark_file is undefined or local_spark_file is none or local_spark_file | trim == '')}}"
 - set_fact:
     install_from_url: "{{not(spark_url is undefined or spark_url is none or spark_url | trim == '')}}"
@@ -11,10 +13,12 @@
 # set a fact containing the appropriate (private) IP addresses of the spark_master_nodes
 # (if a list of spark_master_nodes was passed in)
 - set_fact:
-    spark_data_ips: "{{(spark_master_nodes | default([])) | map('extract', hostvars, [('ansible_' + data_iface), 'ipv4', 'address']) | list}}"
+    spark_master_data_ips: "{{(spark_master_nodes | default([])) | map('extract', hostvars, ['ansible_' + data_iface, 'ipv4', 'address']) | list}}"
+    spark_master_bind_ips: "{{(spark_master_nodes | default([])) | map('extract', hostvars, ['ansible_' + bind_iface, 'ipv4', 'address']) | list}}"
   when: spark_master_nodes != []
 - set_fact:
-    spark_data_ips: "{{spark_data_ips | default([data_addr])}}"
+    spark_master_data_ips: "{{spark_master_data_ips | default([data_addr])}}"
+    bind_address: "{{hostvars[inventory_hostname]['ansible_' + bind_iface]['ipv4']['address']}}"
 # If we're installing from a URL, then download the Spark
 # distribution from that URL
 - block:
@@ -75,10 +79,4 @@
       mode: 0644
       owner: "{{spark_user}}"
       group: "{{spark_group}}"
-  - name: Add bindAddress entry (if api_addr is different from data_addr)
-    lineinfile:
-      dest: "{{spark_dir}}/conf/spark-defaults.conf"
-      line: "spark.driver.bindAddress     {{api_addr}}"
-      insertafter: EOF
-    when: api_addr != data_addr
   become: true

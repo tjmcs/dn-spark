@@ -4,6 +4,9 @@
     name: get-java-home
 - include: add-spark-user.yml static=no
 - include: install-apache-spark.yml static=no
+- include_role:
+    name: secure-spark-nodes
+  when: enable_reverse_proxy | default(secure_cluster | default(false))
 - include: create-spark-service.yml static=no
 - include: configure-ha-cluster.yml static=no
   when: (zk_nodes | default([])) != [] and (spark_master_nodes | length) > 1
