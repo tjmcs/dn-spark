@@ -14,7 +14,7 @@
       dest: /etc/nginx/nginx.conf
       insertafter: "    upstream"
       line: "        server {{item}}:8080;"
-    with_items: "{{spark_master_bind_ips | reverse | list}}"
+    with_items: "{{spark_master_ips | reverse | list}}"
   - name: Add Spark location to NGINX server blocks
     replace:
       dest: /etc/nginx/nginx.conf

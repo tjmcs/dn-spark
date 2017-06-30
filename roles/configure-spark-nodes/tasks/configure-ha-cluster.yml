@@ -3,7 +3,7 @@
 # spark.deploy.recoveryMode  - Set to ZOOKEEPER to enable standby Master recovery mode (default: NONE).
 # spark.deploy.zookeeper.url - The ZooKeeper cluster url (e.g., n1a:5181,n2a:5181,n3a:5181).
 # spark.deploy.zookeeper.dir - The directory in ZooKeeper to store recovery state (default: /spark). This can be optional
-- name: configure master nodes to recover using ZooKeeper
+- name: Configure master nodes to recover using ZooKeeper
   lineinfile:
     dest: "{{spark_dir}}/conf/spark-defaults.conf"
     line: "{{item}}"

@@ -1,0 +1,18 @@
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+# start the services needed
+- block:
+  # start the spark-master or spark-worker service (depending on the defined
+  # cluster role)
+  - name: Start spark service
+    service:
+      name: "spark-{{cluster_role | default('worker')}}"
+      state: restarted
+  # if we're deploying a secure, multi-master cluster and this play is deploying
+  # the master nodes, then start the keepalived service on the master nodes
+  - name: Start keepalived service on master nodes (if needed)
+    service:
+      name: keepalived
+      state: restarted
+    when: (enable_reverse_proxy | default(secure_cluster | default(false))) and (cluster_role | default('worker')) == 'master'
+  become: true

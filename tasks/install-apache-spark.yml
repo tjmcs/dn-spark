@@ -72,11 +72,4 @@
       mode: 0755
       owner: "{{spark_user}}"
       group: "{{spark_group}}"
-  - name: Add spark-default.conf file to distribution
-    template:
-      src: "spark-defaults.conf.j2"
-      dest: "{{spark_dir}}/conf/spark-defaults.conf"
-      mode: 0644
-      owner: "{{spark_user}}"
-      group: "{{spark_group}}"
   become: true

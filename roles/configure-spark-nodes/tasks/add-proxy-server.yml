@@ -3,10 +3,6 @@
 # first ensure that, if the `reverse_proxy_url` parameter is defined, the
 # Spark nodes are configured so that traffic destined for the cluster can
 # be forwarded through the defined proxy
-- block:
-  - name: Test for existence of reverse proxy URL
-    fail: msg="Reverse Proxy not defined"
-    when: reverse_proxy_url | default('') == ''
 - name: configure master nodes to reverseProxy connections for the workers
   lineinfile:
     dest: "{{spark_dir}}/conf/spark-defaults.conf"
