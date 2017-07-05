@@ -28,7 +28,7 @@
       dest: /tmp
       mode: 0644
       validate_certs: no
-    environment: "{{environment_vars}}"
+    environment: "{{environment_vars | default({})}}"
   - set_fact:
       spark_filename: "{{spark_url | basename}}"
   when: install_from_url is defined and install_from_url
