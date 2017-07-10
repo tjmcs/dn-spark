@@ -40,9 +40,25 @@
       insertafter: "unicast_peer"
       state: present
     with_items: "{{spark_master_bind_ips | difference([bind_address]) | reverse | list}}"
-  # and reset the `bind_address` and `spark_master_bind_ips` to the `spark_master_virtual_ip`
-  - set_fact:
-      bind_address: "{{spark_master_virtual_ip}}"
-      spark_master_bind_ips:
-        - "{{spark_master_virtual_ip}}"
+  # setup the local machine to forward any requests received on the virtual IP
+  # address to the IP address that the WebUI is listening on using iptables
+  - name: Make sure iptables-services package is installed
+    package:
+      name: iptables-services
+      state: present
+  - name: Enable iptables service at boot
+    service:
+      name: iptables
+      enabled: yes
+  - name: Configure port forwarding with iptables
+    shell: "{{item}}"
+    with_items:
+      - "sysctl net.ipv4.ip_forward=1"
+      - "iptables -t nat -A PREROUTING -p tcp -d {{spark_master_virtual_ip}} --dport {{spark_master_webui_port}} -j DNAT --to {{bind_address}}:{{spark_master_webui_port}}"
+      - "iptables -A FORWARD -p tcp -d {{bind_address}} --dport {{spark_master_webui_port}} -j ACCEPT"
+      - "iptables-save > /etc/sysconfig/iptables"
+  - name: Restart iptables service to pickup changes
+    service:
+      name: iptables
+      state: restarted
   become: true

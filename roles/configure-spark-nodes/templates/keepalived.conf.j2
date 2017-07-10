@@ -1,7 +1,7 @@
 ! Configuration File for keepalived
 
 vrrp_script chk_nginx {
-    script "/usr/bin/curl http://{{bind_address}}:{{spark_master_webui_port}} | grep Status | grep 'ALIVE|RECOVERING'"
+    script "/usr/bin/curl http://{{bind_address}}:{{spark_master_webui_port}}/json/ | grep status | egrep 'ALIVE|RECOVERING'"
     interval 2
     weight 2
 }
