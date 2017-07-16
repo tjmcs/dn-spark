@@ -1,13 +1,13 @@
 ! Configuration File for keepalived
 
-vrrp_script chk_nginx {
-    script "/usr/bin/curl http://{{bind_address}}:{{spark_master_webui_port}}/json/ | grep status | egrep 'ALIVE|RECOVERING'"
+vrrp_script chk_master_alive {
+    script "/usr/bin/curl http://admin:dummypwd@{{bind_address}}:{{spark_master_webui_port}}/json/ | grep status | egrep 'ALIVE|RECOVERING'"
     interval 2
     weight 2
 }
 
 vrrp_instance VI_1 {
-    state MASTER
+    state BACKUP
     interface {{bind_iface}}
     virtual_router_id 51
     priority 1
@@ -18,7 +18,7 @@ vrrp_instance VI_1 {
     }
     unicast_src_ip {{bind_address}}
     track_script {
-        chk_nginx
+        chk_master_alive
     }
     virtual_ipaddress {
         {{spark_master_virtual_ip}} dev {{bind_iface}}

@@ -1,0 +1,24 @@
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+# enable ACLS and set the list of users/administrators that have view and
+# modify access to all Spark jobs
+- block:
+  - name: Copy over the ForwardingAuthFilter JAVA file
+    copy:
+      src: 'com'
+      dest: '/tmp'
+  - name: Build the corresponding JAR file on the server's classpath
+    shell: "cd /tmp && javac -classpath $(echo {{spark_dir}}/jars/*.jar | tr ' ' ':') com/datanexus/servlet/ForwardingAuthFilter.java && jar cvf {{spark_dir}}/jars/forwarding-auth-filter.jar com/datanexus/servlet/ForwardingAuthFilter.class"
+  - name: Setup ACLs used to restrict UI access
+    lineinfile:
+      dest: "{{spark_dir}}/conf/spark-defaults.conf"
+      line: "{{item}}"
+      insertafter: EOF
+    with_items:
+      - "spark.acls.enable:           true"
+      - "spark.ui.filters:            com.datanexus.servlet.ForwardingAuthFilter"
+      - "spark.admin.acls:            {{spark_admin_list}}"
+      - "spark.modify.acls:           {{(spark_modify_list | default(spark_admin_list)).split(',') | union(spark_admin_list.split(',')) | join(',')}}"
+      - "spark.ui.view.acls:          {{(spark_view_list | default(spark_admin_list)).split(',') | union(spark_admin_list.split(',')) | join(',')}}"
+  become: true
+  become_user: spark

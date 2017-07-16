@@ -37,6 +37,23 @@
   hosts: nginx
   tasks: []
 
+- name: Generate UUID to use as a shared secret
+  hosts: spark_master:spark
+  gather_facts: no
+  pre_tasks:
+    # first, initialize the play by loading any `local_vars_file` that may have
+    # been passed in, restarting the network on the target nodes (if desired),
+    # and determining the `data_iface` and `api_iface` values from the input
+    # `iface_description_array` (if one was passed in)
+    - include_role:
+        name: initialize-play
+    # then, if we're deploying a secure cluster, generate a UUID we can use
+    # as a shared secret amongst the nodes of our cluster
+    - set_fact:
+        spark_cluster_secret: "{{ 9999999999999999999999 | random | to_uuid }}"
+      run_once: true
+      when: enable_reverse_proxy | default(secure_cluster | default(false))
+
 # Then, deploy Spark to the nodes in the spark_master host group
 - name: Install/configure servers (master nodes)
   hosts: spark_master

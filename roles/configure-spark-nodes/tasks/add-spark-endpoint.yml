@@ -15,14 +15,24 @@
       insertafter: "    upstream"
       line: "        server {{item}}:8080;"
     with_items: "{{spark_master_ips | reverse | list}}"
+  - set_fact:
+      nginx_proxy_settings:
+        - 'proxy_pass http://{{application}};'
+        - 'proxy_set_header X-Real-IP $remote_addr;'
+        - 'proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;'
+        - 'proxy_set_header Host $http_host;'
+        - 'proxy_set_header X-NginX-Proxy true;'
+        - 'proxy_redirect off;'
+        # - 'proxy_set_header X-Forwarded-User $remote_user;'
+        # - 'proxy_set_header Authorization $http_authorization;'
   - name: Add Spark location to NGINX server blocks
     replace:
       dest: /etc/nginx/nginx.conf
-      regexp: '(([^\S\n]*)location / {)(\n)([^\S\n]*})'
-      replace: '\g<1>\n\g<2>    {{item}}\n\g<4>'
+      regexp: '(([^\S\n]*)location / {)(\n)([\s].*;\n)*([^\S\n]*})'
+      replace: '\g<1>\n\g<2>    {{item}}\n\g<5>'
     with_items:
-      - "proxy_pass http://{{application}};"
-      - "proxy_pass http://{{application}};"
+      - '{{nginx_proxy_settings | join("\n\g<2>    ")}}'
+      - '{{nginx_proxy_settings | join("\n\g<2>    ")}}'
   - name: Ensure that SELinux allows connections from httpd
     shell: setsebool httpd_can_network_connect on
   - name: Restart nginx instance to pickup new configuration
