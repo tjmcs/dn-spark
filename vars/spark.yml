@@ -8,7 +8,7 @@
 
 application: spark
 spark_data_dir: /var/lib
-spark_package_list: ["java-1.8.0-openjdk", "java-1.8.0-openjdk-devel"]
+spark_package_list: ["java-1.8.0-openjdk", "java-1.8.0-openjdk-devel", "httpd-tools"]
 
 spark_group: spark
 spark_user: spark
@@ -29,6 +29,7 @@ data_iface: "eth0"
 
 spark_master_port: 7077
 spark_master_webui_port: 8080
+spark_master_rest_port: 6066
 spark_worker_port: 7178
 spark_worker_webui_port: 8181
 

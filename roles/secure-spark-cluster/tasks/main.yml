@@ -1,0 +1,7 @@
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+# setup the shared secret on each node
+- include: secure-spark-cluster.yml static=no
+# and secure the UI (deploying a servlet filter to secures the UI via Basic
+# Authentication and setting up ACLs for the UI)
+- include: secure-spark-ui.yml static=no

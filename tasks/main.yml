@@ -2,9 +2,20 @@
 ---
 - include_role:
     name: get-java-home
+# add a spark user/group to the hosts
 - include: add-spark-user.yml static=no
+# install Apache spark locally
 - include: install-apache-spark.yml static=no
+# configure the nodes (based on their role in the cluster)
+- include_role:
+    name: configure-spark-nodes
+# if this is a secure deployment, then secure the spark cluster that we're
+# deploying (deploying a servlet filter that secures the UI via Basic Auth,
+# setting up a shared secret amongst the nodes in the cluster to secure
+# internode communications, and setting up ACLs for the UI)
+- include_role:
+    name: secure-spark-cluster
+  when: is_secure_deployment
+# then create the Spark service on each node, enable it on boot, and start it
 - include: create-spark-service.yml static=no
-- include: configure-ha-cluster.yml static=no
-  when: (zk_nodes | default([])) != [] and (spark_master_nodes | length) > 1
 - include: start-spark-service.yml static=no

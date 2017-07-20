@@ -1,0 +1,25 @@
+package com.datanexus.servlet.http;
+
+import java.security.Principal;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletRequestWrapper;
+
+public class BasicAuthHttpServletRequest extends HttpServletRequestWrapper {
+    private String myUsername;
+    private String myPassword;
+
+    public BasicAuthHttpServletRequest(HttpServletRequest aRequest, String username, String password) {
+        super(aRequest);
+        myUsername = username;
+        myPassword = password;
+    }
+
+    /**
+     * This method returns the Remote User name as user\@domain.com.
+     */
+    @Override
+    public String getRemoteUser() {
+        return myUsername;
+    }
+
+}

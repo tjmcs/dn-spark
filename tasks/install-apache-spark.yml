@@ -8,13 +8,6 @@
 - set_fact:
     install_from_url: "{{not(spark_url is undefined or spark_url is none or spark_url | trim == '')}}"
   when: not(install_from_dir)
-# set a fact containing the appropriate (private) IP addresses of the spark_master_nodes
-# (if a list of spark_master_nodes was passed in)
-- set_fact:
-    spark_data_ips: "{{(spark_master_nodes | default([])) | map('extract', hostvars, [('ansible_' + data_iface), 'ipv4', 'address']) | list}}"
-  when: spark_master_nodes != []
-- set_fact:
-    spark_data_ips: "{{spark_data_ips | default([data_addr])}}"
 # If we're installing from a URL, then download the Spark
 # distribution from that URL
 - block:
@@ -24,7 +17,7 @@
       dest: /tmp
       mode: 0644
       validate_certs: no
-    environment: "{{environment_vars}}"
+    environment: "{{environment_vars | default({})}}"
   - set_fact:
       spark_filename: "{{spark_url | basename}}"
   when: install_from_url is defined and install_from_url
@@ -40,8 +33,8 @@
       spark_filename: "{{local_spark_file | basename}}"
   when: install_from_dir
 # regardless of which option was used, we need to unpack the
-# distribution file and setup the basic configuration options
-# using a template
+# distribution file into the appropriate directory and ensure that the
+# `{{spark_data_dir}}/spark` directory exists
 - block:
   # create the directory Spark will be unpacked into
   - name: Create Spark home directory {{spark_dir}}
@@ -68,17 +61,4 @@
       mode: 0755
       owner: "{{spark_user}}"
       group: "{{spark_group}}"
-  - name: Add spark-default.conf file to distribution
-    template:
-      src: "spark-defaults.conf.j2"
-      dest: "{{spark_dir}}/conf/spark-defaults.conf"
-      mode: 0644
-      owner: "{{spark_user}}"
-      group: "{{spark_group}}"
-  - name: Add bindAddress entry (if api_addr is different from data_addr)
-    lineinfile:
-      dest: "{{spark_dir}}/conf/spark-defaults.conf"
-      line: "spark.driver.bindAddress     {{api_addr}}"
-      insertafter: EOF
-    when: api_addr != data_addr
   become: true

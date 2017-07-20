@@ -1,0 +1,17 @@
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+# setup nodes to use the (pre-defined) secret to secure internode
+# communications in the cluster
+- block:
+  - name: Setup shared secret to use for internode authentication
+    lineinfile:
+      dest: "{{spark_dir}}/conf/spark-defaults.conf"
+      line: "{{item.new_val}}"
+      regexp: "{{item.regex}}"
+    with_items:
+      - regex: "^spark.authenticate "
+        new_val: "spark.authenticate           true"
+      - regex: "^spark.authenticate.secret"
+        new_val: "spark.authenticate.secret    {{spark_cluster_secret}}"
+  become: true
+  become_user: "{{spark_user}}"

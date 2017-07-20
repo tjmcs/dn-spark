@@ -1,0 +1,11 @@
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+- name: Build spark-defaults.conf file from template
+  template:
+    src: "spark-defaults.conf.j2"
+    dest: "{{spark_dir}}/conf/spark-defaults.conf"
+    mode: 0644
+    owner: "{{spark_user}}"
+    group: "{{spark_group}}"
+  become: true
+  become_user: "{{spark_user}}"

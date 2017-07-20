@@ -1,0 +1,10 @@
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+- name: Build log4j.properties file from template
+  template:
+    src: "log4j.properties.j2"
+    dest: "{{spark_dir}}/conf/log4j.properties"
+    mode: 0644
+    owner: "{{spark_user}}"
+    group: "{{spark_group}}"
+  become: true

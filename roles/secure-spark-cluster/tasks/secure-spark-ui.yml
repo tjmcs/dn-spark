@@ -1,0 +1,53 @@
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+# secure the Spark UI using a servlet filter and setup access control lists
+- block:
+  - set_fact:
+      spark_admin_list: "{{(spark_admin_users | default('admin')).split(',')}}"
+      spark_modify_list: "{{(spark_modify_users | default(spark_admin_users | default('admin'))).split(',')}}"
+      spark_view_list: "{{(spark_view_users | default(spark_admin_users | default('admin'))).split(',')}}"
+  # ensure that we have passwords setup for all of the users in the admin,
+  # modify, and view lists
+  - name: Create new random passwords for basic authentication
+    command: htpasswd "{{(item[0] == 0) | ternary('-cb','-b')}}" "{{spark_dir}}/conf/.htpasswd" "{{item[1]}}" "{{lookup('password', 'credentials/' + item[1] + '/password.txt length=15 chars=ascii_letters,digits,hexdigits')}}"
+    with_indexed_items: "{{spark_admin_list | union(spark_modify_list) | union(spark_view_list)}}"
+  # ensure the target directory for our basic authentication template exists
+  - name: Ensure target directory for basic auth filter exists
+    file:
+      path: '/tmp/com/datanexus/servlet/http'
+      state: directory
+  # build a JAR file from our BasicAuthFilter.java.j2 template
+  - name: Create a BasicAuthFilter JAVA file from template
+    template:
+      src: '{{item.template_file}}'
+      dest: '{{item.destination}}'
+      mode: 0644
+      owner: "{{spark_user}}"
+      group: "{{spark_group}}"
+    with_items:
+      - template_file: 'BasicAuthFilter.java.j2'
+        destination: '/tmp/com/datanexus/servlet/BasicAuthFilter.java'
+      - template_file: 'BasicAuthHttpServletRequest.java.j2'
+        destination: '/tmp/com/datanexus/servlet/http/BasicAuthHttpServletRequest.java'
+  - name: Build the corresponding JAR file on the server's classpath
+    shell: "cd /tmp && javac -classpath $(echo {{spark_dir}}/jars/*.jar | tr ' ' ':') com/datanexus/servlet/http/BasicAuthHttpServletRequest.java com/datanexus/servlet/BasicAuthFilter.java && jar cvf {{spark_dir}}/jars/basic-auth-filter.jar com/datanexus/servlet/http/BasicAuthHttpServletRequest.class com/datanexus/servlet/BasicAuthFilter.class"
+  # enable the servlet filter we just built, setup ACLS for our UI, and set the
+  # list of users that have admin, modify, and view access to jobs in the Spark UI
+  - name: Setup ACLs used to restrict UI access
+    lineinfile:
+      dest: "{{spark_dir}}/conf/spark-defaults.conf"
+      line: "{{item.new_val}}"
+      regexp: "{{item.regex}}"
+    with_items:
+      - regex: "^spark.ui.filters"
+        new_val: "spark.ui.filters             com.datanexus.servlet.BasicAuthFilter"
+      - regex: "^spark.acls.enable"
+        new_val: "spark.acls.enable            true"
+      - regex: "^spark.admin.acls"
+        new_val: "spark.admin.acls             {{spark_admin_list | join(',')}}"
+      - regex:  "^spark.modify.acls"
+        new_val: "spark.modify.acls            {{spark_modify_list | join(',')}}"
+      - regex: "^spark.ui.view.acls"
+        new_val: "spark.ui.view.acls           {{spark_view_list | union(spark_modify_list) | union(spark_admin_list) | join(',')}}"
+  become: true
+  become_user: "{{spark_user}}"

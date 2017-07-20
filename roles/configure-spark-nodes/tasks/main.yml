@@ -1,0 +1,15 @@
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+# set a couple of facts we'll need shortly
+- set_fact:
+    is_secure_deployment: "{{secure_cluster | default(false)}}"
+    is_multi_master_play: "{{(ansible_play_hosts | intersect(spark_master_nodes)) != [] and (spark_master_nodes | length) > 1}}"
+# create our `spark-defaults.conf` file from the template in this role and
+# setup the log4j properties file that should be used by our Spark instances
+- include: add-spark-defaults.yml static=no
+- include: add-log4j-properties.yml static=no
+# if this is a multi-master play, then configure the target nodes of this
+# play as a multi-master cluster that talk to each other through the external
+# Zookeeper ensemble defined by the `zk_nodes` list
+- include: configure-ha-cluster.yml static=no
+  when: (zk_nodes | default([])) != [] and is_multi_master_play

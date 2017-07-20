@@ -1,0 +1,52 @@
+#!/usr/bin/env ansible-playbook
+#
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+# Build our spark and spark_master host groups
+- name: Create spark and spark_master host groups
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    # if we're using dynamic provisioning; build the host groups from the
+    # meta-data associated with the matching nodes in the selected cloud
+    - block:
+      # load the 'local variables file', if one was defined, to get any variables
+      # we might need from that file when constructing our host groups
+      - name: Load local variables file
+        include_vars:
+          file: "{{local_vars_file}}"
+        when: not (local_vars_file is undefined or local_vars_file is none or local_vars_file | trim == '')
+      # then, build our host groups (spark_master, spark, and zookeeper)
+      - include_role:
+          name: build-app-host-groups
+        vars:
+          host_group_list:
+            - { name: spark, role: master }
+            - { name: spark }
+      when: cloud is defined and (cloud == 'aws' or cloud == 'osp')
+
+# Then, deploy Spark to the nodes in the spark_master host group
+- name: Secure servers in the Spark cluster
+  hosts: spark_master:spark
+  gather_facts: no
+  vars_files:
+    - vars/spark.yml
+  pre_tasks:
+    # first, initialize the play to load variables that may have been passed
+    # in via a `local_vars_file`
+    - include_role:
+        name: initialize-play
+      vars:
+        skip_network_restart: true
+    # then, generate a UUID we can use as a shared secret amongst the nodes of
+    # the cluster we're securing
+    - set_fact:
+        spark_cluster_secret: "{{ 9999999999999999999999 | random | to_uuid }}"
+      run_once: true
+    - set_fact:
+        service_list: "{{(inventory_hostname in groups['spark_master']) | ternary(['spark-master'], ['spark-worker'])}}"
+  roles:
+    # now that we have all of the facts we need, modify the configuration of
+    # the nodes in the cluster to construct a secure cluster
+    - role: secure-cluster
+      target_nodes: "{{ansible_play_hosts}}"
