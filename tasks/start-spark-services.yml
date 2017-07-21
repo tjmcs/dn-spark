@@ -15,9 +15,9 @@
       seconds: "{{seconds_between_hosts | default(5)}}"
   # if we're deploying a secure, multi-master cluster and this play is deploying
   # the master nodes, then start the keepalived service on the master nodes
-  - name: Start keepalived service on master nodes (if needed)
+  - name: (Re)start keepalived service on master nodes (if needed)
     service:
       name: keepalived
       state: restarted
-  when: (enable_reverse_proxy | default(secure_cluster | default(false))) and (cluster_role | default('worker')) == 'master'
+  when: (secure_cluster | default(false)) and (cluster_role | default('worker')) == 'master'
   become: true

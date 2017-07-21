@@ -1,0 +1,47 @@
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+# it's an error if the `spark_master_virtual_ip` parameter is not defined
+- name: Test for existence of Spark Master Virtual IP (if needed)
+  fail: msg="Spark Master Virtual IP not defined"
+  when: spark_master_virtual_ip | default('') == ''
+# get the name of the interface the virtual IP will be bound to and the
+# equivalent local address
+- set_fact:
+    data_iface_info: "{{hostvars[inventory_hostname]['ansible_' + data_iface]['ipv4']}}"
+    api_iface_info: "{{hostvars[inventory_hostname]['ansible_' + api_iface]['ipv4']}}"
+- set_fact:
+    data_cidr: "{{(data_iface_info['network'] + '/' + data_iface_info['netmask']) | ipsubnet}}"
+    api_cidr: "{{(api_iface_info['network'] + '/' + data_iface_info['netmask']) | ipsubnet}}"
+- set_fact:
+    vip_iface: "{{([spark_master_virtual_ip] | ipaddr(data_cidr) != []) | ternary(data_iface, ([spark_master_virtual_ip] | ipaddr(api_cidr) != []) | ternary(api_iface, ''))}}"
+# it's an error if the `vip_iface` parameter is an empty string (the value
+# specified is not on the the `data_iface` network, nor is it on the
+# `api_iface` network
+- name: Test to ensure Spark Master Virtual IP is valid
+  fail: msg="Illegal Spark Master Virtual IP specified"
+  when: vip_iface == ''
+# if it's a valid virtual IP interface, then get the address that goes with it
+- set_fact:
+    lcl_addr: "{{hostvars[inventory_hostname]['ansible_' + vip_iface]['ipv4']['address']}}"
+# get the appropriate value for the JAVA_HOME environment variable
+- include_role:
+    name: get-java-home
+# if we're deploying the master nodes of a multi-master spark cluster then we
+# need to setup keepalived on the target nodes of this play and setup iptables
+# to forward the appropriate ports to the IP address where the Spark Master UI
+# is actually listening on in each node
+- block:
+  - include: setup-master-keepalived.yml static=no
+  - include: setup-master-iptables.yml static=no
+  when: inventory_hostname in spark_master_nodes
+# next, if we're deploying master nodes, add the reverse proxy server to our
+# spark-defaults.conf file and add an upstream endpoint to our NGINX instances
+# that redirects requests to the defined `spark_master_virtual_ip` address
+- include: add-proxy-server.yml static=no
+  when: reverse_proxy_defined and inventory_hostname in spark_master_nodes
+# Setup a servlet filter to "secure" the UI, enable acls on the UI, and add the
+# lists of users to the `spark.*.acls` lists (where `*` can be replaced by the
+# strings `admin`, `modify`, and `view` for the corresponding lists of users)
+- include: secure-spark-cluster.yml static=no
+- include: "secure-spark-ui-{{reverse_proxy_defined | ternary('nginx','local')}}.yml static=no"
+- include: update-service-file.yml static=no

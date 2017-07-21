@@ -6,11 +6,14 @@
 - name: Configure master nodes to recover using ZooKeeper
   lineinfile:
     dest: "{{spark_dir}}/conf/spark-defaults.conf"
-    line: "{{item}}"
-    insertafter: EOF
+    line: "{{item.new_val}}"
+    regexp: "{{item.regex}}"
   with_items:
-    - "spark.deploy.recoveryMode:   ZOOKEEPER"
-    - "spark.deploy.zookeeper.url:  {{ zk_nodes | join(':2181,') }}:2181"
-    - "spark.deploy.zookeeper.dir:  /spark"
+    - regex: "^spark.deploy.recoveryMode"
+      new_val: "spark.deploy.recoveryMode    ZOOKEEPER"
+    - regex: "^spark.deploy.zookeeper.url"
+      new_val: "spark.deploy.zookeeper.url   {{ zk_nodes | join(':2181,') }}:2181"
+    - regex: "^spark.deploy.zookeeper.dir"
+      new_val: "spark.deploy.zookeeper.dir   /spark"
   when: (cluster_role | default('worker')) == 'master'
   become: true

@@ -1,0 +1,92 @@
+#!/usr/bin/env ansible-playbook
+#
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+# Build our spark and spark_master host groups
+- name: Create spark and spark_master host groups
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    # if we're using dynamic provisioning; build the host groups from the
+    # meta-data associated with the matching nodes in the selected cloud
+    - block:
+      # load the 'local variables file', if one was defined, to get any variables
+      # we might need from that file when constructing our host groups
+      - name: Load local variables file
+        include_vars:
+          file: "{{local_vars_file}}"
+        when: not (local_vars_file is undefined or local_vars_file is none or local_vars_file | trim == '')
+      # then, build our host groups (spark_master, spark, and nginx)
+      - include_role:
+          name: build-app-host-groups
+        vars:
+          host_group_list:
+            - { name: spark, role: master }
+            - { name: spark }
+            - name: nginx
+      when: cloud is defined and (cloud == 'aws' or cloud == 'osp')
+
+# Collect some NGINX related facts (if an `nginx` host group is defined)
+- name: Gather facts from NGINX host group (if defined)
+  hosts: nginx
+  tasks: []
+
+# Then, deploy Spark to the nodes in the spark_master host group
+- name: Secure servers in the Spark cluster
+  hosts: spark_master:spark
+  gather_facts: no
+  vars_files:
+    - vars/spark.yml
+  vars:
+    - spark_master_nodes: "{{groups['spark_master']}}"
+    - nginx_nodes: "{{groups['nginx'] | default([])}}"
+  pre_tasks:
+    # first, initialize the play to load variables that may have been passed
+    # in via a `local_vars_file`
+    - include_role:
+        name: initialize-play
+      vars:
+        skip_network_restart: true
+    # set the cluster_role fact for the master nodes
+    - set_fact:
+        cluster_role: master
+      when: inventory_hostname in spark_master_nodes
+    # now that we know the name of our `data_iface` and `api_iface`, we can
+    # construct the the `spark_master_data_ips` and `spark_master_api_ips`
+    # lists (the `data_addr` and `api_addr` values for our Spark master nodes,
+    # respectively)
+    - set_fact:
+        spark_master_data_ips: "{{(spark_master_nodes | default([data_addr])) | map('extract', hostvars, ['ansible_' + data_iface, 'ipv4', 'address']) | list}}"
+        spark_master_api_ips: "{{(spark_master_nodes | default([api_addr])) | map('extract', hostvars, ['ansible_' + api_iface, 'ipv4', 'address']) | list}}"
+    # then, generate a UUID we can use as a shared secret amongst the nodes of
+    # the cluster we're securing
+    - set_fact:
+        spark_cluster_secret: "{{ 9999999999999999999999 | random | to_uuid }}"
+      run_once: true
+    # test to see if a value was defined for the `reverse_proxy_url` paramneter
+    # (or not); if so and if we're deploying a secure cluster, we'll set up the
+    # cluster to use the (assumed to be NGINX) reverse proxy for authentication;
+    # if not then we'll setup our Spark cluster to authenticate locally
+    - name: Test for existence of reverse proxy URL
+      set_fact:
+        reverse_proxy_defined: "{{reverse_proxy_url | default('') != ''}}"
+      run_once: true
+    # if we're performing a secure deployment and a reverse proxy was not defined,
+    # then ensure that the `httpd-tools` package is installed locally
+    - include_role:
+        name: install-packages
+      vars:
+        package_list: ['httpd-tools']
+      when: not(reverse_proxy_defined)
+    # finally, set a few facts that we'll need later on in the play
+    - set_fact:
+        is_multi_master_play: "{{(ansible_play_hosts | intersect(spark_master_nodes)) != [] and (spark_master_nodes | length) > 1}}"
+        spark_master_bind_ips: "{{spark_master_data_ips}}"
+        bind_addr: "{{data_addr}}"
+        bind_iface: "{{data_iface}}"
+        service_list: "{{(inventory_hostname in groups['spark_master']) | ternary(['spark-master'], ['spark-worker'])}}"
+  roles:
+    # now that we have all of the facts we need, modify the configuration of
+    # the nodes in the cluster to construct a secure cluster
+    - role: secure-cluster
+      target_nodes: "{{ansible_play_hosts}}"

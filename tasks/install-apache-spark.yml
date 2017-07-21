@@ -5,20 +5,10 @@
 # whether we're uploading the Spark distribution from a file local to the Ansible node
 # or downloading the distribution from a URL
 - set_fact:
-    bind_iface: "{{(secure_cluster | default(false)) | ternary(data_iface, api_iface)}}"
     install_from_dir: "{{not(local_spark_file is undefined or local_spark_file is none or local_spark_file | trim == '')}}"
 - set_fact:
     install_from_url: "{{not(spark_url is undefined or spark_url is none or spark_url | trim == '')}}"
   when: not(install_from_dir)
-# set a fact containing the appropriate (private) IP addresses of the spark_master_nodes
-# (if a list of spark_master_nodes was passed in)
-- set_fact:
-    spark_master_data_ips: "{{(spark_master_nodes | default([])) | map('extract', hostvars, ['ansible_' + data_iface, 'ipv4', 'address']) | list}}"
-    spark_master_bind_ips: "{{(spark_master_nodes | default([])) | map('extract', hostvars, ['ansible_' + bind_iface, 'ipv4', 'address']) | list}}"
-  when: spark_master_nodes != []
-- set_fact:
-    spark_master_data_ips: "{{spark_master_data_ips | default([data_addr])}}"
-    bind_address: "{{hostvars[inventory_hostname]['ansible_' + bind_iface]['ipv4']['address']}}"
 # If we're installing from a URL, then download the Spark
 # distribution from that URL
 - block:

@@ -1,58 +1,17 @@
 # (c) 2017 DataNexus Inc.  All Rights Reserved
 ---
-# set a couple of facts we'll need shortly
-- set_fact:
-    is_secure_deployment: "{{enable_reverse_proxy | default(secure_cluster | default(false))}}"
-    is_multi_master_play: "{{(ansible_play_hosts | intersect(spark_master_nodes)) != [] and (spark_master_nodes | length) > 1}}"
-# ensure that a couple of parameters we'll need later are defined; first
-# it's an error if we're performing a secure deployment and the
-# `reverse_proxy_url` parameter is not defined
-- name: Test for existence of reverse proxy URL
-  fail: msg="Reverse Proxy not defined"
-  when: is_secure_deployment and reverse_proxy_url | default('') == ''
-# next, it's an error if we're performing a multi-master deployment in this
-# play and the `spark_master_virtual_ip` parameter is not defined 
-- name: Test for existence of Spark Master Virtual IP (if needed)
-  fail: msg="Spark Master Virtual IP not defined"
-  when: is_multi_master_play and spark_master_virtual_ip | default('') == ''
-- set_fact:
-    spark_master_ips: "{{(is_secure_deployment and is_multi_master_play) | ternary([spark_master_virtual_ip], spark_master_bind_ips)}}"
-# if it's a secure deployment and we're deploying the master nodes of a
-# multi-master spark cluster then we need to setup keepalived on the target
-# nodes of this play
-- include: setup-master-keepalived.yml static=no
-  when: is_secure_deployment and is_multi_master_play
-# if it's a secure deployment and we're deploying the master nodes of a
-# multi-master spark cluster then we need to setup iptables on the target
-# nodes of this play to redirect traffic from the virtual IP managed by
-# keepalived to the IP address that the master nodes are actually
-# listening on
-- include: setup-master-iptables.yml static=no
-  when: is_secure_deployment and is_multi_master_play
-# now that we've defined the address we'll be binding our Spark Web UI's to
-# (will depend on if it's secure or not and whether it's a multi-master
-# Spark cluster or not) we can create our spark-defaults.conf file from the
+# create an initial version of the spark-defaults.conf file from the
 # template in this role
 - include: add-spark-defaults.yml static=no
+# and add a log4j.properties file
 - include: add-log4j-properties.yml static=no
-# and now that we've added the spark-defaults.conf file to our isntances,
-# we can add the reverse proxy server to that file, add an upstream endpoint
-# to our NGINX instances, and configure the that upstream endpoint so that it
-# points to the virtual IP assigned to the active master in our multi-master
-# Spark cluster
-- include: add-proxy-server.yml static=no
-  when: is_secure_deployment and is_multi_master_play
-# if this is a secure deployment and a list of admin users was defined, then
-# setup a servlet filter to "secure" the UI, enable acls on the UI, and add
-# the lists of users to the `spark.*.acls` lists (where `*` can be replaced
-# by the strings `admin`, `modify`, and `view` for the corresponding lists
-# of users)
-- include: secure-spark-cluster.yml
-  when: is_secure_deployment
-- include: secure-spark-ui.yml static=no
-  when: is_secure_deployment and not(spark_admin_list is undefined or spark_admin_list is none or (spark_admin_list | trim) == '')
-# if this is a multi-master play, then configure the target nodes of this
-# play as a multi-master cluster that talk to each other through the external
-# Zookeeper ensemble defined by the `zk_nodes` list
+# next, if this is a secure deployment, trigger the appropriate role to secure
+# the cluster behind an NGINX instance
+- include_role:
+    name: secure-spark-cluster
+  when: secure_cluster | default(false)
+# finally, if this is a multi-master play, then configure the target nodes of
+# this play as a multi-master cluster that talk to each other through the
+# external Zookeeper ensemble defined by the `zk_nodes` list
 - include: configure-ha-cluster.yml static=no
   when: (zk_nodes | default([])) != [] and is_multi_master_play

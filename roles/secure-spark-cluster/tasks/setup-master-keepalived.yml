@@ -1,7 +1,5 @@
 # (c) 2016 DataNexus Inc.  All Rights Reserved
 ---
-- set_fact:
-    api_addr: "{{api_addr.split('\n').0}}"
 - block:
   # setup sysctl to allow nginx to bind to non-local (virtual) address
   - name: Configure sysctl to allow non-local binding
@@ -9,6 +7,8 @@
       name: "net.ipv4.ip_nonlocal_bind"
       value: 1
       state: present
+  - name: Load new parameter into the running kernel
+    command: "sysctl -p"
   # first, make sure that the `keepalived` package is installed locally
   # since we'll be using that to control a set of nginx nodes that are
   # configured for an active-passive failover scenario
@@ -39,5 +39,10 @@
       line: "        {{item}}"
       insertafter: "unicast_peer"
       state: present
-    with_items: "{{spark_master_bind_ips | difference([bind_address]) | reverse | list}}"
+    with_items: "{{spark_master_bind_ips | difference([bind_addr]) | reverse | list}}"
+  # finally, restart the keepalived daemon on the master nodes
+  - name: (Re)start keepalived service on master nodes
+    service:
+      name: keepalived
+      state: restarted
   become: true

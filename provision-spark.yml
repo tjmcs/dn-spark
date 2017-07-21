@@ -37,7 +37,7 @@
   hosts: nginx
   tasks: []
 
-- name: Generate UUID to use as a shared secret
+- name: Generate UUID and set facts used in playbook
   hosts: spark_master:spark
   gather_facts: no
   pre_tasks:
@@ -47,12 +47,47 @@
     # `iface_description_array` (if one was passed in)
     - include_role:
         name: initialize-play
-    # then, if we're deploying a secure cluster, generate a UUID we can use
-    # as a shared secret amongst the nodes of our cluster
+    # if we're deploying a secure cluster, generate a UUID we can use as a
+    # shared secret amongst the nodes of our cluster
     - set_fact:
         spark_cluster_secret: "{{ 9999999999999999999999 | random | to_uuid }}"
       run_once: true
-      when: enable_reverse_proxy | default(secure_cluster | default(false))
+      when: secure_cluster | default(false)
+    # test to see if a value was defined for the `reverse_proxy_url` paramneter
+    # (or not); if so and if we're deploying a secure cluster, we'll set up the
+    # cluster to use the (assumed to be NGINX) reverse proxy for authentication;
+    # if not then we'll setup our Spark cluster to authenticate locally
+    - name: Test for existence of reverse proxy URL
+      set_fact:
+        reverse_proxy_defined: "{{reverse_proxy_url | default('') != ''}}"
+      run_once: true
+    # if we're performing a secure deployment and areverse proxy was not defined,
+    # then ensure that the `httpd-tools` package is installed locally
+    - include_role:
+        name: install-packages
+      vars:
+        package_list: ['httpd-tools']
+      when: (secure_cluster | default(false)) and not(reverse_proxy_defined)
+    # set a few facts containing the members of three of our host groups
+    - set_fact:
+        zookeeper_nodes: "{{groups['zookeeper'] | default([])}}"
+        nginx_nodes: "{{groups['nginx'] | default([])}}"
+        spark_master_nodes: "{{groups['spark_master'] | default([])}}"
+    # and now that we know the name of our `data_iface` and `api_iface`, we can
+    # construct the list of  the `zk_nodes` (the `data_iface` addresses of our
+    # `zookeeper_nodes`) as well as the values for the `spark_master_data_ips`
+    # `spark_master_api_ips` lists (the `data_addr` and `api_addr` values for
+    #  our Spark master nodes, respectively)
+    - set_fact:
+        zk_nodes: "{{zookeeper_nodes | map('extract', hostvars, [('ansible_' + data_iface), 'ipv4', 'address']) | list}}"
+        spark_master_data_ips: "{{(spark_master_nodes | default([data_addr])) | map('extract', hostvars, ['ansible_' + data_iface, 'ipv4', 'address']) | list}}"
+        spark_master_api_ips: "{{(spark_master_nodes | default([api_addr])) | map('extract', hostvars, ['ansible_' + api_iface, 'ipv4', 'address']) | list}}"
+    # finally, set a few facts that we'll need later on in the playbook
+    - set_fact:
+        is_multi_master_play: "{{(ansible_play_hosts | intersect(spark_master_nodes)) != [] and (spark_master_nodes | length) > 1}}"
+        spark_master_bind_ips: "{{(secure_cluster | default(false)) | ternary(spark_master_data_ips, spark_master_api_ips)}}"
+        bind_addr: "{{(secure_cluster | default(false)) | ternary(data_addr, api_addr.split('\n').0)}}"
+        bind_iface: "{{(secure_cluster | default(false)) | ternary(data_iface, api_iface)}}"
 
 # Then, deploy Spark to the nodes in the spark_master host group
 - name: Install/configure servers (master nodes)
@@ -63,9 +98,6 @@
   vars:
     - combined_package_list: "{{ (default_packages|default([])) | union(spark_package_list) | union((install_packages_by_tag|default({})).spark|default([])) }}"
     - cluster_role: master
-    - spark_master_nodes: "{{groups['spark_master']}}"
-    - zookeeper_nodes: "{{groups['zookeeper'] | default([])}}"
-    - nginx_nodes: "{{groups['nginx'] | default([])}}"
   pre_tasks:
     # first, initialize the play by loading any `local_vars_file` that may have
     # been passed in, restarting the network on the target nodes (if desired),
@@ -73,12 +105,8 @@
     # `iface_description_array` (if one was passed in)
     - include_role:
         name: initialize-play
-    # and now that we know the name of our `data_iface`, we can construct the
-    # list of `zk_nodes` and `ngx_nodes` (the `data_iface` and `api_iface`
-    # addresses of our `zookeeper_nodes` and `nginx_nodes`, respectively)
-    - set_fact:
-        zk_nodes: "{{zookeeper_nodes | map('extract', hostvars, [('ansible_' + data_iface), 'ipv4', 'address']) | list}}"
-        ngx_nodes: "{{nginx_nodes | map('extract', hostvars, [('ansible_' + api_iface), 'ipv4', 'address']) | list}}"
+      vars:
+        skip_network_restart: true
   # now that we have all of the facts we need, provision the input nodes
   roles:
     - role: provision-nodes
@@ -92,9 +120,6 @@
     - vars/spark.yml
   vars:
     - combined_package_list: "{{ (default_packages|default([])) | union(spark_package_list) | union((install_packages_by_tag|default({})).spark|default([])) }}"
-    - spark_master_nodes: "{{groups['spark_master']}}"
-    - zookeeper_nodes: "{{groups['zookeeper'] | default([])}}"
-    - nginx_nodes: "{{groups['nginx'] | default([])}}"
   pre_tasks:
     # first, initialize the play by loading any `local_vars_file` that may have
     # been passed in, restarting the network on the target nodes (if desired),
@@ -102,12 +127,8 @@
     # `iface_description_array` (if one was passed in)
     - include_role:
         name: initialize-play
-    # and now that we know the name of our `data_iface`, we can construct the
-    # list of `zk_nodes` and `ngx_nodes` (the `data_iface` and `api_iface`
-    # addresses of our `zookeeper_nodes` and `nginx_nodes`, respectively)
-    - set_fact:
-        zk_nodes: "{{zookeeper_nodes | map('extract', hostvars, [('ansible_' + data_iface), 'ipv4', 'address']) | list}}"
-        ngx_nodes: "{{nginx_nodes | map('extract', hostvars, [('ansible_' + api_iface), 'ipv4', 'address']) | list}}"
+      vars:
+        skip_network_restart: true
   # now that we have all of the facts we need, provision the input nodes
   roles:
     - role: provision-nodes

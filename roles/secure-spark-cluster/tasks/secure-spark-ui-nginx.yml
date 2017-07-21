@@ -1,0 +1,66 @@
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+# enable ACLS and set the list of users/administrators that have view and
+# modify access to all Spark jobs
+- block:
+  - set_fact:
+      spark_admin_list: "{{(spark_admin_users | default('admin')).split(',')}}"
+      spark_modify_list: "{{(spark_modify_users | default(spark_admin_users | default('admin'))).split(',')}}"
+      spark_view_list: "{{(spark_view_users | default(spark_admin_users | default('admin'))).split(',')}}"
+  # ensure the target directory for our basic authentication template exists
+  - name: Ensure temporary directories for building forwarding auth filter exist
+    file:
+      path: '/tmp/com/datanexus/servlet/http'
+      state: directory
+  # build a JAR file from the input BasicAuthHttpServletRequest.java.j2 and
+  # ForwardingAuthFilter.java.j2 templates
+  - name: Create a the JAVA files used to fill in authentication information from templates
+    template:
+      src: '{{item.template_file}}'
+      dest: '{{item.destination}}'
+      mode: 0644
+      owner: "{{spark_user}}"
+      group: "{{spark_group}}"
+    with_items:
+      - template_file: 'ForwardingAuthFilter.java.j2'
+        destination: '/tmp/com/datanexus/servlet/ForwardingAuthFilter.java'
+      - template_file: 'BasicAuthHttpServletRequest.java.j2'
+        destination: '/tmp/com/datanexus/servlet/http/BasicAuthHttpServletRequest.java'
+  - name: Build the corresponding JAR file on the server's classpath
+    shell: "cd /tmp && javac -classpath $(echo {{spark_dir}}/jars/*.jar | tr ' ' ':') com/datanexus/servlet/http/BasicAuthHttpServletRequest.java com/datanexus/servlet/ForwardingAuthFilter.java && jar cvf {{spark_dir}}/jars/basic-auth-filter.jar com/datanexus/servlet/http/BasicAuthHttpServletRequest.class com/datanexus/servlet/ForwardingAuthFilter.class"
+  # enable the servlet filter we just built, setup ACLS for our UI, and set the
+  # list of users that have admin, modify, and view access to jobs in the Spark UI
+  - name: Bind to appropriate address and setup ACLs used to restrict UI access
+    lineinfile:
+      dest: "{{spark_dir}}/conf/spark-defaults.conf"
+      line: "{{item.new_val}}"
+      regexp: "{{item.regex}}"
+    with_items:
+      - regex: "^spark.master "
+        new_val: 'spark.master                 spark://{{ spark_master_bind_ips | join(":{0},".format(spark_master_port)) }}:{{ spark_master_port }}'
+      - regex: "^spark.driver.bindAddress"
+        new_val: "spark.driver.bindAddress     {{ bind_addr }}"
+      - regex: "^spark.ui.filters"
+        new_val: "spark.ui.filters             com.datanexus.servlet.ForwardingAuthFilter"
+      - regex: "^spark.acls.enable"
+        new_val: "spark.acls.enable            true"
+      - regex: "^spark.admin.acls"
+        new_val: "spark.admin.acls             {{spark_admin_list | join(',')}}"
+      - regex:  "^spark.modify.acls"
+        new_val: "spark.modify.acls            {{spark_modify_list | join(',')}}"
+      - regex: "^spark.ui.view.acls"
+        new_val: "spark.ui.view.acls           {{spark_view_list | union(spark_modify_list) | union(spark_admin_list) | join(',')}}"
+  become: true
+  become_user: spark
+# ensure that the service is listening on the appropriate interface (if it
+# was deployed as an unsecured cluster, then it's currently listening on the
+# api interface and needs to be moved to the data_iface instead)
+- block:
+  - name: Ensure service is configured for the bind interface
+    template:
+      src: "spark-{{(inventory_hostname in spark_master_nodes) | ternary('master','worker')}}.service.j2"
+      dest: "/etc/systemd/system/spark-{{(inventory_hostname in spark_master_nodes) | ternary('master','worker')}}.service"
+      mode: 0644
+  - name: restart systemctl daemon
+    command: systemctl daemon-reload
+  become: true

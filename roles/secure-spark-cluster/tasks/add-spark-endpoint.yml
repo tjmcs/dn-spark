@@ -13,18 +13,10 @@
     lineinfile:
       dest: /etc/nginx/nginx.conf
       insertafter: "    upstream"
-      line: "        server {{item}}:8080;"
-    with_items: "{{spark_master_ips | reverse | list}}"
+      line: "        server {{spark_master_virtual_ip}}:8080;"
   - set_fact:
       nginx_proxy_settings:
         - 'proxy_pass http://{{application}};'
-        - 'proxy_set_header X-Real-IP $remote_addr;'
-        - 'proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;'
-        - 'proxy_set_header Host $http_host;'
-        - 'proxy_set_header X-NginX-Proxy true;'
-        - 'proxy_redirect off;'
-        # - 'proxy_set_header X-Forwarded-User $remote_user;'
-        # - 'proxy_set_header Authorization $http_authorization;'
   - name: Add Spark location to NGINX server blocks
     replace:
       dest: /etc/nginx/nginx.conf
@@ -40,4 +32,3 @@
       name: nginx
       state: restarted
   become: true
-  when: (ansible_play_hosts | union(spark_master_nodes)) != []

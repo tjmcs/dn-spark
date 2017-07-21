@@ -1,0 +1,26 @@
+! Configuration File for keepalived
+
+vrrp_script chk_master_alive {
+    script "/usr/bin/curl http://admin:{{lookup('password', 'credentials/admin/password.txt length=15 chars=ascii_letters,digits,hexdigits') | default('dummypwd')}}@{{bind_addr}}:{{spark_master_webui_port}}/json/ | grep status | egrep 'ALIVE|RECOVERING'"
+    interval 2
+    weight 2
+}
+
+vrrp_instance VI_1 {
+    state {{(spark_master_nodes.index(inventory_hostname) == 0) | ternary('MASTER','BACKUP')}}
+    interface {{vip_iface}}
+    virtual_router_id 51
+    priority 1
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass 1111
+    }
+    unicast_src_ip {{lcl_addr}}
+    track_script {
+        chk_master_alive
+    }
+    virtual_ipaddress {
+        {{spark_master_virtual_ip}} dev {{vip_iface}}
+    }
+}

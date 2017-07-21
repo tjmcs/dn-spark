@@ -1,0 +1,27 @@
+# (c) 2017 DataNexus Inc.  All Rights Reserved
+---
+# configure the Spark nodes so that traffic destined for the cluster can be
+# forwarded through the defined (assumed to be NGINX) reverse proxy
+- name: Configure master nodes to use the defined URL as a reverse proxy
+  lineinfile:
+    dest: "{{spark_dir}}/conf/spark-defaults.conf"
+    line: "{{item.new_val}}"
+    regexp: "{{item.regex}}"
+  with_items:
+    - regex: "^spark.ui.reverseProxy "
+      new_val: "spark.ui.reverseProxy        true"
+    - regex: "^spark.ui.reverseProxyUrl"
+      new_val: "spark.ui.reverseProxyUrl     {{reverse_proxy_url}}"
+  become: true
+  become_user: spark
+# then add the `/spark` endpoint to each of our nginx instances and configure
+# that endoint to act as a reverse proxy for the Spark cluster
+- block:
+  - name: Add the necessary endpoint to the defined NGINX instance(s)
+    include: add-spark-endpoint.yml static=no
+    delegate_to: "{{nginx_host}}"
+    run_once: true
+    with_items: "{{nginx_nodes}}"
+    loop_control:
+      loop_var: nginx_host
+  become: true

@@ -18,8 +18,7 @@
 # Default system properties included when running spark-submit.
 # This is useful for setting default environmental settings.
 
-spark.master                 spark://{{ spark_master_data_ips | join(":{0},".format(spark_master_port)) }}:{{ spark_master_port }}
+spark.master                 spark://{{ spark_master_bind_ips | join(":{0},".format(spark_master_port)) }}:{{ spark_master_port }}
 spark.eventLog.enabled       true
 spark.serializer             org.apache.spark.serializer.KryoSerializer
-spark.driver.bindAddress     {{ ((cluster_role | default('worker')) == 'master') | ternary(bind_address, data_addr)  }}
-spark.ui.reverseProxy:       true
+spark.driver.bindAddress     {{ bind_addr }}
